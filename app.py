@@ -1,4 +1,4 @@
-﻿import hashlib
+import hashlib
 import os
 import time
 from pathlib import Path
@@ -30,6 +30,7 @@ PG_CONFIG = {
     "password": os.getenv("PG_PASSWORD"),
     "host": os.getenv("PG_HOST", "localhost"),
     "port": os.getenv("PG_PORT", "5432"),
+    "sslmode": os.getenv("PG_SSLMODE", "prefer"),  # hosted DBs (Neon, Supabase) require "require"
 }
 
 RANK_WORDS = ["highest", "lowest", "most", "least", "best", "worst", "top", "compare", "rank", "maximum", "minimum"]
@@ -344,7 +345,7 @@ def index_uploaded_pdf(pdf_bytes: bytes, filename: str) -> int:
         return 0
 
     client = PersistentClient(path=str(DB_DIR))
-    embed_fn = embedding_functions.DefaultEmbeddingFunction()
+    embed_fn = get_embed_fn()
     try:
         collection = client.get_collection(name=PDF_COLLECTION, embedding_function=embed_fn)
     except Exception:
@@ -363,15 +364,79 @@ def index_uploaded_pdf(pdf_bytes: bytes, filename: str) -> int:
     return len(chunks)
 
 
+MULTILINGUAL_MODEL_NAME = "paraphrase-multilingual-MiniLM-L12-v2"  # supports English + Amharic
+
+
+@st.cache_resource
+def get_embed_fn():
+    return embedding_functions.SentenceTransformerEmbeddingFunction(
+        model_name=MULTILINGUAL_MODEL_NAME
+    )
+
+
+def rebuild_all_collections_multilingual():
+    """
+    Rebuilds BOTH ChromaDB collections (stats + PDFs) using the multilingual
+    embedding function, directly on the server, from files already in the repo.
+    Returns a summary string.
+    """
+    client = PersistentClient(path=str(DB_DIR))
+    embed_fn = get_embed_fn()
+
+    # --- Rebuild stats collection from the CSV ---
+    try:
+        client.delete_collection(name=STATS_COLLECTION)
+    except Exception:
+        pass
+    stats_collection = client.create_collection(name=STATS_COLLECTION, embedding_function=embed_fn)
+
+    df = pd.read_csv(STATS_FILE)
+    docs, ids, metas = [], [], []
+    for i, row in df.iterrows():
+        docs.append(str(row.get("text", "")))
+        ids.append(f"stat_{i}")
+        metas.append({"group": str(row.get("group", "")), "indicator": str(row.get("indicator", ""))})
+        if len(docs) >= 100:
+            stats_collection.add(documents=docs, ids=ids, metadatas=metas)
+            docs, ids, metas = [], [], []
+    if docs:
+        stats_collection.add(documents=docs, ids=ids, metadatas=metas)
+    stats_count = len(df)
+
+    # --- Rebuild PDF collection from whatever PDFs are already in the repo ---
+    try:
+        client.delete_collection(name=PDF_COLLECTION)
+    except Exception:
+        pass
+    client.create_collection(name=PDF_COLLECTION, embedding_function=embed_fn)  # ensure it exists even if no PDFs
+
+    pdf_dir = Path("data set") / "pdf"
+    pdf_chunk_total = 0
+    pdf_files_done = []
+    if pdf_dir.exists():
+        for pdf_path in sorted(pdf_dir.glob("*.pdf")):
+            with open(pdf_path, "rb") as f:
+                pdf_bytes = f.read()
+            chunk_count = index_uploaded_pdf(pdf_bytes, pdf_path.name)
+            pdf_chunk_total += chunk_count
+            pdf_files_done.append(pdf_path.name)
+
+    return (
+        f"Rebuilt stats collection: {stats_count} rows.\n"
+        f"Rebuilt PDF collection: {pdf_chunk_total} chunks from {len(pdf_files_done)} file(s): "
+        f"{', '.join(pdf_files_done) if pdf_files_done else '(none found)'}."
+    )
+
+
 def get_stats_collection():
     client = PersistentClient(path=str(DB_DIR))
-    embed_fn = embedding_functions.DefaultEmbeddingFunction()
+    embed_fn = get_embed_fn()
     return client.get_collection(name=STATS_COLLECTION, embedding_function=embed_fn)
 
 
 def get_pdf_collection():
     client = PersistentClient(path=str(DB_DIR))
-    embed_fn = embedding_functions.DefaultEmbeddingFunction()
+    embed_fn = get_embed_fn()
     try:
         return client.get_collection(name=PDF_COLLECTION, embedding_function=embed_fn)
     except Exception:
@@ -677,6 +742,22 @@ with tab3:
 with tab4:
     st.header("Admin / Usage Stats")
 
+    st.subheader("Rebuild search index for Amharic support")
+    st.caption(
+        "One-time step: rebuilds the search database using a multilingual model, "
+        "so questions typed in Amharic can be matched correctly (not just English). "
+        "Uses the CSV and PDF files already in this repo — no upload needed."
+    )
+    if st.button("🔄 Rebuild search index (multilingual)"):
+        with st.spinner("Rebuilding... this can take a few minutes (downloads the multilingual model on first run)."):
+            try:
+                summary = rebuild_all_collections_multilingual()
+                st.success("Rebuild complete!")
+                st.text(summary)
+            except Exception as e:
+                st.error(f"Rebuild failed: {e}")
+
+    st.divider()
     st.subheader("Upload a new PDF report")
     uploaded_pdf = st.file_uploader("Choose a PDF file to index", type="pdf")
     if uploaded_pdf is not None and st.button("Index this PDF"):
