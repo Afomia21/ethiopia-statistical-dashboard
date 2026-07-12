@@ -410,7 +410,7 @@ def rebuild_all_collections_multilingual():
         pass
     client.create_collection(name=PDF_COLLECTION, embedding_function=embed_fn)  # ensure it exists even if no PDFs
 
-    pdf_dir = Path("data set") / "pdf"
+    pdf_dir = Path("pdf")
     pdf_chunk_total = 0
     pdf_files_done = []
     if pdf_dir.exists():
