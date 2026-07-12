@@ -1,0 +1,8 @@
+streamlit
+pandas
+python-dotenv
+chromadb
+groq
+deep-translator
+psycopg2-binary
+pymupdf
