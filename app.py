@@ -423,10 +423,23 @@ def rebuild_all_collections_multilingual():
             pdf_chunk_total += chunk_count
             pdf_files_done.append(pdf_path.name)
 
+    # Diagnostic info in case the PDF still isn't found, so we don't have to guess blindly
+    debug_lines = [f"Working directory: {Path('.').resolve()}"]
+    try:
+        top_level = sorted(p.name + ("/" if p.is_dir() else "") for p in Path(".").iterdir())
+        debug_lines.append(f"Top-level contents: {top_level}")
+    except Exception as e:
+        debug_lines.append(f"Could not list top level: {e}")
+    for candidate in ["pdf", "data set/pdf", "data set", "data"]:
+        cpath = Path(candidate)
+        debug_lines.append(f"'{candidate}' exists: {cpath.exists()}" + (f", contents: {list(cpath.glob('*'))}" if cpath.exists() else ""))
+    debug_info = "\n".join(debug_lines)
+
     return (
         f"Rebuilt stats collection: {stats_count} rows.\n"
         f"Rebuilt PDF collection: {pdf_chunk_total} chunks from {len(pdf_files_done)} file(s): "
-        f"{', '.join(pdf_files_done) if pdf_files_done else '(none found)'}."
+        f"{', '.join(pdf_files_done) if pdf_files_done else '(none found)'}.\n\n"
+        f"--- Debug info ---\n{debug_info}"
     )
 
 
