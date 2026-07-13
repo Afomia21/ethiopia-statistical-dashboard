@@ -383,12 +383,17 @@ def rebuild_all_collections_multilingual():
     client = PersistentClient(path=str(DB_DIR))
     embed_fn = get_embed_fn()
 
+    def delete_if_exists(name):
+        try:
+            existing_names = [c.name for c in client.list_collections()]
+        except Exception:
+            existing_names = []
+        if name in existing_names:
+            client.delete_collection(name=name)
+
     # --- Rebuild stats collection from the CSV ---
-    try:
-        client.delete_collection(name=STATS_COLLECTION)
-    except Exception:
-        pass
-    stats_collection = client.create_collection(name=STATS_COLLECTION, embedding_function=embed_fn)
+    delete_if_exists(STATS_COLLECTION)
+    stats_collection = client.get_or_create_collection(name=STATS_COLLECTION, embedding_function=embed_fn)
 
     df = pd.read_csv(STATS_FILE)
     docs, ids, metas = [], [], []
@@ -404,11 +409,8 @@ def rebuild_all_collections_multilingual():
     stats_count = len(df)
 
     # --- Rebuild PDF collection from whatever PDFs are already in the repo ---
-    try:
-        client.delete_collection(name=PDF_COLLECTION)
-    except Exception:
-        pass
-    client.create_collection(name=PDF_COLLECTION, embedding_function=embed_fn)  # ensure it exists even if no PDFs
+    delete_if_exists(PDF_COLLECTION)
+    client.get_or_create_collection(name=PDF_COLLECTION, embedding_function=embed_fn)  # ensure it exists even if no PDFs
 
     pdf_dir = Path("pdf")
     pdf_chunk_total = 0
