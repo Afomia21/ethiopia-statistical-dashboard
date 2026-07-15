@@ -707,12 +707,33 @@ with tab1:
         )
         st.download_button("Download chat as text", chat_text, file_name="chat_history.txt")
 
+    ROUTE_ICONS = {"pdf": "📘", "csv": "📊", "sql": "🧮"}
+    ROUTE_LABELS = {"pdf": "DHS Final Report", "csv": "ESPS-5 Survey Data", "sql": "Database Query"}
+    ROUTE_COLORS = {"pdf": "#1b3a2b", "csv": "#1b2a3a", "sql": "#3a2f1b"}
+
     for q, a, route, s_doc, s_page in reversed(st.session_state.messages):
-        st.markdown(f"**You:** {q}  \n*(routed to: {route})*")
-        st.markdown(f"**Chatbot:** {a}")
+        st.markdown(f"**You:** {q}")
+
+        icon = ROUTE_ICONS.get(route, "💬")
+        label = ROUTE_LABELS.get(route, route)
+        color = ROUTE_COLORS.get(route, "#222222")
+        source_line = ""
         if s_doc:
             page_part = f", page(s) {s_page}" if s_page else ""
-            st.caption(f"Source: {s_doc}{page_part}")
+            source_line = f"<div style='margin-top:10px; font-size:0.85em; opacity:0.75;'>Source: {s_doc}{page_part}</div>"
+
+        answer_html = a.replace("\n", "<br>")
+        st.markdown(
+            f"""
+            <div style="background-color:{color}; color:#e6e6e6; padding:16px 18px;
+                        border-radius:10px; margin:8px 0 18px 0; line-height:1.5;">
+                <div style="font-weight:600; margin-bottom:6px;">{icon} {label}</div>
+                <div>{answer_html}</div>
+                {source_line}
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
         st.divider()
 
 with tab2:
