@@ -407,6 +407,19 @@ def rebuild_all_collections_multilingual():
     embedding function, directly on the server, from files already in the repo.
     Returns a summary string.
     """
+    # Make sure the target directory actually exists and is writable BEFORE
+    # ChromaDB tries to open a database file inside it - surfaces the real
+    # cause immediately instead of a generic "readonly database" error later.
+    DB_DIR.mkdir(parents=True, exist_ok=True)
+    probe_file = DB_DIR / ".write_test"
+    try:
+        probe_file.write_text("ok")
+        probe_file.unlink()
+    except Exception as e:
+        raise RuntimeError(
+            f"DB_DIR is not writable at '{DB_DIR.resolve()}': {e}"
+        )
+
     client = get_chroma_client()
     embed_fn = get_embed_fn()
 
@@ -831,6 +844,8 @@ with tab3:
 
 with tab4:
     st.header("Admin / Usage Stats")
+
+    st.caption(f"🔧 Database directory in use: `{DB_DIR.resolve()}`")
 
     st.subheader("Rebuild search index for Amharic support")
     st.caption(
