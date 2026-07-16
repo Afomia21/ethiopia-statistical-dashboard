@@ -7,7 +7,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
-from chromadb import PersistentClient
+from chromadb import EphemeralClient
 from chromadb.utils import embedding_functions
 from groq import Groq
 from deep_translator import GoogleTranslator
@@ -398,28 +398,15 @@ def get_chroma_client():
     """Single shared ChromaDB connection for the whole app - avoids the
     'Collection does not exist' errors caused by opening multiple separate
     PersistentClient connections to the same database in one process."""
-    return PersistentClient(path=str(DB_DIR))
+    return EphemeralClient()
 
 
 def rebuild_all_collections_multilingual():
     """
     Rebuilds BOTH ChromaDB collections (stats + PDFs) using the multilingual
-    embedding function, directly on the server, from files already in the repo.
+    embedding function, directly in memory, from files already in the repo.
     Returns a summary string.
     """
-    # Make sure the target directory actually exists and is writable BEFORE
-    # ChromaDB tries to open a database file inside it - surfaces the real
-    # cause immediately instead of a generic "readonly database" error later.
-    DB_DIR.mkdir(parents=True, exist_ok=True)
-    probe_file = DB_DIR / ".write_test"
-    try:
-        probe_file.write_text("ok")
-        probe_file.unlink()
-    except Exception as e:
-        raise RuntimeError(
-            f"DB_DIR is not writable at '{DB_DIR.resolve()}': {e}"
-        )
-
     client = get_chroma_client()
     embed_fn = get_embed_fn()
 
@@ -845,7 +832,7 @@ with tab3:
 with tab4:
     st.header("Admin / Usage Stats")
 
-    st.caption(f"🔧 Database directory in use: `{DB_DIR.resolve()}`")
+    st.caption("🔧 Search index storage: in-memory (rebuilds automatically each time the app starts)")
 
     st.subheader("Rebuild search index for Amharic support")
     st.caption(
