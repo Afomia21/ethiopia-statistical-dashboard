@@ -35,13 +35,9 @@ PG_CONFIG = {
 
 RANK_WORDS = ["highest", "lowest", "most", "least", "best", "worst", "top", "compare", "rank", "maximum", "minimum"]
 PDF_STRONG_WORDS = ["definition", "explain", "describe", "define", "chapter", "meaning of"]
-# Only words tied to what aggregate_stats.csv actually contains (literacy, household size,
-# age, female %, consumption, school attendance, illness). Removed overly generic words like
-# "rate", "total", "population", "inflation" which caused unrelated PDF-only topics (like
-# inflation reports) to get wrongly routed to the CSV path instead of PDF search.
 CSV_SIGNAL_WORDS = [
-    "literacy", "household size", "read and write",
-    "consumption", "average age", "attended school", "illness", "female",
+    "population", "inflation", "rate", "total", "average", "percentage",
+    "how many", "literacy", "household size", "consumption", "age", "female",
 ]
 
 
@@ -355,19 +351,17 @@ def extract_pdf_chunks_from_bytes(pdf_bytes: bytes, filename: str) -> list:
     return chunks
 
 
-def index_uploaded_pdf(pdf_bytes: bytes, filename: str, client=None, collection=None) -> int:
+def index_uploaded_pdf(pdf_bytes: bytes, filename: str) -> int:
     chunks = extract_pdf_chunks_from_bytes(pdf_bytes, filename)
     if not chunks:
         return 0
 
-    if collection is None:
-        if client is None:
-            client = get_chroma_client()
-        embed_fn = get_embed_fn()
-        try:
-            collection = client.get_collection(name=PDF_COLLECTION, embedding_function=embed_fn)
-        except Exception:
-            collection = client.create_collection(name=PDF_COLLECTION, embedding_function=embed_fn)
+    client = PersistentClient(path=str(DB_DIR))
+    embed_fn = get_embed_fn()
+    try:
+        collection = client.get_collection(name=PDF_COLLECTION, embedding_function=embed_fn)
+    except Exception:
+        collection = client.create_collection(name=PDF_COLLECTION, embedding_function=embed_fn)
 
     safe_name = "".join(c if c.isalnum() else "_" for c in filename)
     ids = [f"pdf_{safe_name}_{i}" for i in range(len(chunks))]
@@ -392,21 +386,13 @@ def get_embed_fn():
     )
 
 
-@st.cache_resource
-def get_chroma_client():
-    """Single shared ChromaDB connection for the whole app - avoids the
-    'Collection does not exist' errors caused by opening multiple separate
-    PersistentClient connections to the same database in one process."""
-    return PersistentClient(path=str(DB_DIR))
-
-
 def rebuild_all_collections_multilingual():
     """
     Rebuilds BOTH ChromaDB collections (stats + PDFs) using the multilingual
     embedding function, directly on the server, from files already in the repo.
     Returns a summary string.
     """
-    client = get_chroma_client()
+    client = PersistentClient(path=str(DB_DIR))
     embed_fn = get_embed_fn()
 
     def delete_if_exists(name):
@@ -436,7 +422,7 @@ def rebuild_all_collections_multilingual():
 
     # --- Rebuild PDF collection from whatever PDFs are already in the repo ---
     delete_if_exists(PDF_COLLECTION)
-    pdf_collection = client.get_or_create_collection(name=PDF_COLLECTION, embedding_function=embed_fn)
+    client.get_or_create_collection(name=PDF_COLLECTION, embedding_function=embed_fn)  # ensure it exists even if no PDFs
 
     pdf_dir = Path("pdf")
     pdf_chunk_total = 0
@@ -445,7 +431,7 @@ def rebuild_all_collections_multilingual():
         for pdf_path in sorted(pdf_dir.glob("*.pdf")):
             with open(pdf_path, "rb") as f:
                 pdf_bytes = f.read()
-            chunk_count = index_uploaded_pdf(pdf_bytes, pdf_path.name, client=client, collection=pdf_collection)
+            chunk_count = index_uploaded_pdf(pdf_bytes, pdf_path.name)
             pdf_chunk_total += chunk_count
             pdf_files_done.append(pdf_path.name)
 
@@ -470,13 +456,13 @@ def rebuild_all_collections_multilingual():
 
 
 def get_stats_collection():
-    client = get_chroma_client()
+    client = PersistentClient(path=str(DB_DIR))
     embed_fn = get_embed_fn()
     return client.get_collection(name=STATS_COLLECTION, embedding_function=embed_fn)
 
 
 def get_pdf_collection():
-    client = get_chroma_client()
+    client = PersistentClient(path=str(DB_DIR))
     embed_fn = get_embed_fn()
     try:
         return client.get_collection(name=PDF_COLLECTION, embedding_function=embed_fn)
@@ -579,7 +565,7 @@ if "startup_check_done" not in st.session_state:
 if not st.session_state.startup_check_done:
     st.session_state.startup_check_done = True
     try:
-        _client = get_chroma_client()
+        _client = PersistentClient(path=str(DB_DIR))
         _embed_fn = get_embed_fn()
         _needs_rebuild = False
         try:
@@ -708,9 +694,8 @@ with tab1:
                         source_note = f"[Source: {source_doc}]"
                     else:
                         documents, metadatas = query_collection(pdf_collection, question, n_results=15)
-                        safe_metas = [m for m in metadatas if isinstance(m, dict)]
-                        sources = sorted({m.get("source") for m in safe_metas if m.get("source")})
-                        pages = sorted({m.get("page") for m in safe_metas if m.get("page") is not None})
+                        sources = sorted({m.get("source") for m in metadatas if m.get("source")})
+                        pages = sorted({m.get("page") for m in metadatas if m.get("page") is not None})
                         source_doc = ", ".join(sources) if sources else "ESS PDF report"
                         source_page = ", ".join(str(p) for p in pages[:3]) if pages else ""
                         if source_page:
