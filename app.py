@@ -35,9 +35,13 @@ PG_CONFIG = {
 
 RANK_WORDS = ["highest", "lowest", "most", "least", "best", "worst", "top", "compare", "rank", "maximum", "minimum"]
 PDF_STRONG_WORDS = ["definition", "explain", "describe", "define", "chapter", "meaning of"]
+# Only words tied to what aggregate_stats.csv actually contains (literacy, household size,
+# age, female %, consumption, school attendance, illness). Removed overly generic words like
+# "rate", "total", "population", "inflation" which caused unrelated PDF-only topics (like
+# inflation reports) to get wrongly routed to the CSV path instead of PDF search.
 CSV_SIGNAL_WORDS = [
-    "population", "inflation", "rate", "total", "average", "percentage",
-    "how many", "literacy", "household size", "consumption", "age", "female",
+    "literacy", "household size", "read and write",
+    "consumption", "average age", "attended school", "illness", "female",
 ]
 
 
@@ -694,8 +698,9 @@ with tab1:
                         source_note = f"[Source: {source_doc}]"
                     else:
                         documents, metadatas = query_collection(pdf_collection, question)
-                        sources = sorted({m.get("source") for m in metadatas if m.get("source")})
-                        pages = sorted({m.get("page") for m in metadatas if m.get("page") is not None})
+                        safe_metas = [m for m in metadatas if isinstance(m, dict)]
+                        sources = sorted({m.get("source") for m in safe_metas if m.get("source")})
+                        pages = sorted({m.get("page") for m in safe_metas if m.get("page") is not None})
                         source_doc = ", ".join(sources) if sources else "ESS PDF report"
                         source_page = ", ".join(str(p) for p in pages[:3]) if pages else ""
                         if source_page:
