@@ -272,6 +272,18 @@ def save_to_cache(question: str, answer: str, route: str, source_doc: str, sourc
         conn.close()
 
 
+def clear_query_cache():
+    conn = psycopg2.connect(**PG_CONFIG)
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM query_cache")
+            deleted = cur.rowcount
+        conn.commit()
+        return deleted
+    finally:
+        conn.close()
+
+
 def get_admin_stats():
     conn = psycopg2.connect(**PG_CONFIG)
     try:
@@ -543,6 +555,32 @@ except Exception as e:
     DB_READY = False
     st.sidebar.warning(f"Database features unavailable: {e}")
 
+# Auto-heal: on every fresh app start (including waking up from sleep), check
+# whether the PDF search index is actually populated. If it's missing or empty
+# (e.g. because the server restarted and lost the previous session's index),
+# rebuild it automatically so the app doesn't need a manual admin click.
+if "startup_check_done" not in st.session_state:
+    st.session_state.startup_check_done = False
+
+if not st.session_state.startup_check_done:
+    st.session_state.startup_check_done = True
+    try:
+        _client = PersistentClient(path=str(DB_DIR))
+        _embed_fn = get_embed_fn()
+        _needs_rebuild = False
+        try:
+            _pdf_coll = _client.get_collection(name=PDF_COLLECTION, embedding_function=_embed_fn)
+            if _pdf_coll.count() == 0:
+                _needs_rebuild = True
+        except Exception:
+            _needs_rebuild = True
+
+        if _needs_rebuild:
+            with st.spinner("First load after waking up: rebuilding the search index, please wait (one-time, takes a couple of minutes)..."):
+                rebuild_all_collections_multilingual()
+    except Exception as _e:
+        st.sidebar.warning(f"Auto-rebuild check skipped: {_e}")
+
 with st.sidebar:
     st.header("Login")
     if "username" not in st.session_state:
@@ -792,6 +830,20 @@ with tab4:
                 st.text(summary)
             except Exception as e:
                 st.error(f"Rebuild failed: {e}")
+
+    st.divider()
+    st.subheader("Clear cached answers")
+    st.caption(
+        "If you just rebuilt the search index or uploaded a new PDF, old cached answers "
+        "may still show up for questions asked before the update. Clear the cache to force "
+        "fresh answers for every question."
+    )
+    if st.button("🗑️ Clear all cached answers"):
+        try:
+            deleted = clear_query_cache()
+            st.success(f"Cleared {deleted} cached answer(s).")
+        except Exception as e:
+            st.error(f"Could not clear cache: {e}")
 
     st.divider()
     st.subheader("Upload a new PDF report")
