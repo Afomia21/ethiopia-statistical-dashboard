@@ -498,18 +498,8 @@ def query_collection(collection, query: str, n_results: int = 5):
 def build_prompt(query: str, documents: list) -> str:
     context = "\n".join(f"- {d}" for d in documents)
     return (
-        "You are the official ESS (Ethiopian Statistical Service) AI Assistant, answering questions "
-        "using ONLY the context provided below - never invent numbers or facts not present in the context.\n\n"
-        "Guidelines for your answer:\n"
-        "- If the exact figure requested isn't in the context but a closely related figure is (e.g. a "
-        "different but nearby time period, or an overall/national figure instead of a specific breakdown), "
-        "clearly state that the exact figure isn't available, then share the closely related figure you did "
-        "find, being explicit about what period/category it actually covers.\n"
-        "- If multiple context snippets reference the same underlying data (e.g. several reports repeating "
-        "one figure), mention that briefly rather than listing duplicates.\n"
-        "- Be specific: name the actual number, unit, and time period/region whenever you state a figure.\n"
-        "- If truly nothing relevant is in the context, say so plainly rather than guessing.\n"
-        "- Keep the answer to 2-4 sentences - clear and complete, not padded.\n\n"
+        "You are a helpful assistant answering questions about Ethiopian statistics. "
+        "Answer using ONLY the context below. If the answer isn't covered, say you don't have that data.\n\n"
         f"Context:\n{context}\n\nQuestion: {query}"
     )
 
@@ -706,7 +696,7 @@ with tab1:
             else:
                 if route == "csv":
                     collection = get_stats_collection()
-                   documents, metadatas = query_collection(pdf_collection, question, n_results=15)
+                  documents, metadatas = query_collection(pdf_collection, question)
                     source_doc = "ESPS-5 Socioeconomic Survey, 2021/22"
                     source_page = ""
                     source_note = f"[Source: {source_doc}]"
