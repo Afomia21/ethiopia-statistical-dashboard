@@ -122,7 +122,6 @@ def ensure_tables():
                     created_at TIMESTAMP DEFAULT NOW()
                 );
             """)
-            # Added: password support on top of the existing users table
             cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(64);")
 
             cur.execute("""
@@ -135,7 +134,6 @@ def ensure_tables():
                     created_at TIMESTAMP DEFAULT NOW()
                 );
             """)
-            # Added: separate source columns on top of the existing chat_history table
             cur.execute("ALTER TABLE chat_history ADD COLUMN IF NOT EXISTS source_doc VARCHAR(255);")
             cur.execute("ALTER TABLE chat_history ADD COLUMN IF NOT EXISTS source_page VARCHAR(50);")
 
@@ -148,7 +146,6 @@ def ensure_tables():
                 );
             """)
 
-            # Added: query_cache table (new, does not touch anything existing)
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS query_cache (
                     id SERIAL PRIMARY KEY,
@@ -209,7 +206,7 @@ def login_user(username: str, password: str):
     """Returns (success: bool, message: str). Auto-registers brand new usernames."""
     existing_hash = get_user_password_hash(username)
     if existing_hash is None:
-        save_user(username)  # keeps existing save_user behavior intact
+        save_user(username)
         create_user_with_password(username, password)
         return True, f"Account created. Logged in as {username}."
     if existing_hash == hash_password(password):
@@ -401,6 +398,27 @@ def get_chroma_client():
     return EphemeralClient()
 
 
+# Every folder we've ever asked the user to upload PDFs into, checked in order.
+# This makes the rebuild robust to exactly which folder ended up with the files.
+PDF_SEARCH_DIRS = [Path("pdf"), Path("data") / "pdf", Path("data set") / "pdf"]
+
+
+def find_all_pdfs():
+    """Scans every known PDF folder location and returns a deduplicated list
+    of PDF file paths (by filename), so it doesn't matter which folder you
+    uploaded into."""
+    seen_names = set()
+    found = []
+    for d in PDF_SEARCH_DIRS:
+        if not d.exists():
+            continue
+        for pdf_path in sorted(d.glob("*.pdf")):
+            if pdf_path.name not in seen_names:
+                seen_names.add(pdf_path.name)
+                found.append(pdf_path)
+    return found
+
+
 def rebuild_all_collections_multilingual():
     """
     Rebuilds BOTH ChromaDB collections (stats + PDFs) using the multilingual
@@ -435,39 +453,31 @@ def rebuild_all_collections_multilingual():
         stats_collection.add(documents=docs, ids=ids, metadatas=metas)
     stats_count = len(df)
 
-    # --- Rebuild PDF collection from whatever PDFs are already in the repo ---
+    # --- Rebuild PDF collection from whatever PDFs are already in the repo,
+    # checking every known folder location (pdf/, data/pdf/, data set/pdf/) ---
     delete_if_exists(PDF_COLLECTION)
     pdf_collection = client.get_or_create_collection(name=PDF_COLLECTION, embedding_function=embed_fn)
 
-    pdf_dir = Path("pdf")
+    pdf_files = find_all_pdfs()
     pdf_chunk_total = 0
     pdf_files_done = []
-    if pdf_dir.exists():
-        for pdf_path in sorted(pdf_dir.glob("*.pdf")):
-            with open(pdf_path, "rb") as f:
-                pdf_bytes = f.read()
-            chunk_count = index_uploaded_pdf(pdf_bytes, pdf_path.name, client=client, collection=pdf_collection)
-            pdf_chunk_total += chunk_count
-            pdf_files_done.append(pdf_path.name)
+    for pdf_path in pdf_files:
+        with open(pdf_path, "rb") as f:
+            pdf_bytes = f.read()
+        chunk_count = index_uploaded_pdf(pdf_bytes, pdf_path.name, client=client, collection=pdf_collection)
+        pdf_chunk_total += chunk_count
+        pdf_files_done.append(f"{pdf_path.name} (from {pdf_path.parent}/)")
 
-    # Diagnostic info in case the PDF still isn't found, so we don't have to guess blindly
     debug_lines = [f"Working directory: {Path('.').resolve()}"]
-    try:
-        top_level = sorted(p.name + ("/" if p.is_dir() else "") for p in Path(".").iterdir())
-        debug_lines.append(f"Top-level contents: {top_level}")
-    except Exception as e:
-        debug_lines.append(f"Could not list top level: {e}")
-    for candidate in ["pdf", "data set/pdf", "data set", "data"]:
-        cpath = Path(candidate)
-        debug_lines.append(f"'{candidate}' exists: {cpath.exists()}" + (f", contents: {list(cpath.glob('*'))}" if cpath.exists() else ""))
+    for d in PDF_SEARCH_DIRS:
+        debug_lines.append(f"'{d}' exists: {d.exists()}" + (f", {len(list(d.glob('*.pdf')))} PDF(s)" if d.exists() else ""))
     debug_info = "\n".join(debug_lines)
 
     return (
         f"Rebuilt stats collection: {stats_count} rows.\n"
-        f"Rebuilt PDF collection: {pdf_chunk_total} chunks from {len(pdf_files_done)} file(s): "
-        f"{', '.join(pdf_files_done) if pdf_files_done else '(none found)'}.\n\n"
-        f"--- Debug info ---\n{debug_info}"
-    )
+        f"Rebuilt PDF collection: {pdf_chunk_total} chunks from {len(pdf_files_done)} file(s):\n"
+        + "\n".join(f"  - {name}" for name in pdf_files_done) if pdf_files_done else "(none found)"
+    ) + f"\n\n--- Debug info ---\n{debug_info}"
 
 
 def get_stats_collection():
@@ -490,7 +500,7 @@ def load_stats_df():
     return pd.read_csv(STATS_FILE)
 
 
-def query_collection(collection, query: str, n_results: int = 5):
+def query_collection(collection, query: str, n_results: int = 8):
     results = collection.query(query_texts=[query], n_results=n_results, include=["documents", "metadatas"])
     return results.get("documents", [[]])[0], results.get("metadatas", [[]])[0]
 
@@ -570,10 +580,6 @@ except Exception as e:
     DB_READY = False
     st.sidebar.warning(f"Database features unavailable: {e}")
 
-# Auto-heal: on every fresh app start (including waking up from sleep), check
-# whether the PDF search index is actually populated. If it's missing or empty
-# (e.g. because the server restarted and lost the previous session's index),
-# rebuild it automatically so the app doesn't need a manual admin click.
 if "startup_check_done" not in st.session_state:
     st.session_state.startup_check_done = False
 
@@ -625,7 +631,6 @@ current_user = st.session_state.get("username") or "anonymous"
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Reload past chat history once per login, so it doesn't wipe out new messages on every rerun
 if DB_READY and current_user != "anonymous" and st.session_state.history_loaded_for != current_user:
     try:
         past = load_chat_history(current_user)
@@ -696,7 +701,7 @@ with tab1:
             else:
                 if route == "csv":
                     collection = get_stats_collection()
-                  documents, metadatas = query_collection(pdf_collection, question)
+                    documents, metadatas = query_collection(collection, question)
                     source_doc = "ESPS-5 Socioeconomic Survey, 2021/22"
                     source_page = ""
                     source_note = f"[Source: {source_doc}]"
@@ -833,6 +838,7 @@ with tab4:
     st.header("Admin / Usage Stats")
 
     st.caption("🔧 Search index storage: in-memory (rebuilds automatically each time the app starts)")
+    st.caption(f"🔧 PDF folders checked: {[str(p) for p in PDF_SEARCH_DIRS]}")
 
     st.subheader("Rebuild search index for Amharic support")
     st.caption(
