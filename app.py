@@ -878,7 +878,9 @@ with tab1:
     )
 
     with st.container(key="bottom_bar"):
-        col_input, col_amharic, col_mic, col_send = st.columns([5, 1, 1, 1.3])
+        left_spacer, col_input, col_amharic, col_mic, col_send, right_spacer = st.columns(
+            [1, 5, 1, 1, 1.3, 1]
+        )
 
         with col_input:
             typed_question = st.text_input(
