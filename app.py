@@ -719,10 +719,17 @@ with tab1:
     if "last_audio_id" not in st.session_state:
         st.session_state.last_audio_id = None
 
-    amharic_mode = st.checkbox("Also answer in Amharic")
+    # --- Compact controls row: small Amharic toggle + small mic icon button ---
+    ctrl_col1, ctrl_col2, _spacer = st.columns([1.4, 0.6, 6])
+    with ctrl_col1:
+        amharic_mode = st.checkbox("🇪🇹 Amharic", value=False)
+    with ctrl_col2:
+        audio_value = None
+        with st.popover("🎤"):
+            st.caption("Record a question")
+            audio_value = st.audio_input("Recorder", label_visibility="collapsed")
 
     voice_question = None
-    audio_value = st.audio_input("🎤 Record a question (optional)")
     if audio_value is not None and GROQ_API_KEY:
         audio_bytes = audio_value.read()
         audio_id = hashlib.md5(audio_bytes).hexdigest()
