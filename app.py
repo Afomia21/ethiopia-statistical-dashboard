@@ -1,5 +1,4 @@
 import hashlib
-import tempfile
 import os
 import time
 from pathlib import Path
@@ -7,7 +6,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
-from chromadb import EphemeralClient
+from chromadb import PersistentClient
 from chromadb.utils import embedding_functions
 from groq import Groq
 from deep_translator import GoogleTranslator
@@ -17,7 +16,7 @@ import fitz  # PyMuPDF
 load_dotenv()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
-DB_DIR = Path(tempfile.gettempdir()) / "ess_chroma_db"  # always-writable location; rebuilt fresh on every app start anyway
+DB_DIR = Path("db") / "chroma_db"  # pre-built locally with local_rebuild.py, committed to the repo - read-only at runtime
 STATS_COLLECTION = "esps_stats"
 PDF_COLLECTION = "ess_pdf_docs"
 STATS_FILE = Path("data set") / "preprocessed" / "aggregate_stats.csv"
@@ -36,10 +35,6 @@ PG_CONFIG = {
 
 RANK_WORDS = ["highest", "lowest", "most", "least", "best", "worst", "top", "compare", "rank", "maximum", "minimum"]
 PDF_STRONG_WORDS = ["definition", "explain", "describe", "define", "chapter", "meaning of"]
-# Only words tied to what aggregate_stats.csv actually contains (literacy, household size,
-# age, female %, consumption, school attendance, illness). Removed overly generic words like
-# "rate", "total", "population", "inflation" which caused unrelated PDF-only topics (like
-# inflation reports) to get wrongly routed to the CSV path instead of PDF search.
 CSV_SIGNAL_WORDS = [
     "literacy", "household size", "read and write",
     "consumption", "average age", "attended school", "illness", "female",
@@ -392,21 +387,21 @@ def get_embed_fn():
 
 @st.cache_resource
 def get_chroma_client():
-    """Single shared ChromaDB connection for the whole app - avoids the
-    'Collection does not exist' errors caused by opening multiple separate
-    PersistentClient connections to the same database in one process."""
-    return EphemeralClient()
+    """Single shared ChromaDB connection for the whole app - reads the
+    pre-built database committed to the repo (built locally with
+    local_rebuild.py). Read-only access works fine even though the
+    filesystem itself can't be written to at runtime on Streamlit Cloud."""
+    return PersistentClient(path=str(DB_DIR))
 
 
-# Every folder we've ever asked the user to upload PDFs into, checked in order.
-# This makes the rebuild robust to exactly which folder ended up with the files.
+# Kept for the manual admin "Rebuild" button and PDF-upload feature only -
+# NOT run automatically on startup anymore (that caused CPU throttling,
+# since it reloaded the multilingual model and re-processed 4500+ PDF
+# chunks on every single app restart).
 PDF_SEARCH_DIRS = [Path("pdf"), Path("data") / "pdf", Path("data set") / "pdf"]
 
 
 def find_all_pdfs():
-    """Scans every known PDF folder location and returns a deduplicated list
-    of PDF file paths (by filename), so it doesn't matter which folder you
-    uploaded into."""
     seen_names = set()
     found = []
     for d in PDF_SEARCH_DIRS:
@@ -420,11 +415,10 @@ def find_all_pdfs():
 
 
 def rebuild_all_collections_multilingual():
-    """
-    Rebuilds BOTH ChromaDB collections (stats + PDFs) using the multilingual
-    embedding function, directly in memory, from files already in the repo.
-    Returns a summary string.
-    """
+    """Manual admin action only - rebuilds both collections in memory for this
+    session. Since Streamlit Cloud's filesystem is read-only at runtime, this
+    does NOT persist across restarts; use local_rebuild.py + upload to GitHub
+    for the permanent fix."""
     client = get_chroma_client()
     embed_fn = get_embed_fn()
 
@@ -436,7 +430,6 @@ def rebuild_all_collections_multilingual():
         if name in existing_names:
             client.delete_collection(name=name)
 
-    # --- Rebuild stats collection from the CSV ---
     delete_if_exists(STATS_COLLECTION)
     stats_collection = client.get_or_create_collection(name=STATS_COLLECTION, embedding_function=embed_fn)
 
@@ -453,8 +446,6 @@ def rebuild_all_collections_multilingual():
         stats_collection.add(documents=docs, ids=ids, metadatas=metas)
     stats_count = len(df)
 
-    # --- Rebuild PDF collection from whatever PDFs are already in the repo,
-    # checking every known folder location (pdf/, data/pdf/, data set/pdf/) ---
     delete_if_exists(PDF_COLLECTION)
     pdf_collection = client.get_or_create_collection(name=PDF_COLLECTION, embedding_function=embed_fn)
 
@@ -473,11 +464,12 @@ def rebuild_all_collections_multilingual():
         debug_lines.append(f"'{d}' exists: {d.exists()}" + (f", {len(list(d.glob('*.pdf')))} PDF(s)" if d.exists() else ""))
     debug_info = "\n".join(debug_lines)
 
+    files_list = "\n".join(f"  - {name}" for name in pdf_files_done) if pdf_files_done else "(none found)"
     return (
         f"Rebuilt stats collection: {stats_count} rows.\n"
-        f"Rebuilt PDF collection: {pdf_chunk_total} chunks from {len(pdf_files_done)} file(s):\n"
-        + "\n".join(f"  - {name}" for name in pdf_files_done) if pdf_files_done else "(none found)"
-    ) + f"\n\n--- Debug info ---\n{debug_info}"
+        f"Rebuilt PDF collection: {pdf_chunk_total} chunks from {len(pdf_files_done)} file(s):\n{files_list}"
+        f"\n\n--- Debug info ---\n{debug_info}"
+    )
 
 
 def get_stats_collection():
@@ -508,8 +500,18 @@ def query_collection(collection, query: str, n_results: int = 8):
 def build_prompt(query: str, documents: list) -> str:
     context = "\n".join(f"- {d}" for d in documents)
     return (
-        "You are a helpful assistant answering questions about Ethiopian statistics. "
-        "Answer using ONLY the context below. If the answer isn't covered, say you don't have that data.\n\n"
+        "You are the official ESS (Ethiopian Statistical Service) AI Assistant, answering questions "
+        "using ONLY the context provided below - never invent numbers or facts not present in the context.\n\n"
+        "Guidelines for your answer:\n"
+        "- If the exact figure requested isn't in the context but a closely related figure is (e.g. a "
+        "different but nearby time period, or an overall/national figure instead of a specific breakdown), "
+        "clearly state that the exact figure isn't available, then share the closely related figure you did "
+        "find, being explicit about what period/category it actually covers.\n"
+        "- If multiple context snippets reference the same underlying data (e.g. several reports repeating "
+        "one figure), mention that briefly rather than listing duplicates.\n"
+        "- Be specific: name the actual number, unit, and time period/region whenever you state a figure.\n"
+        "- If truly nothing relevant is in the context, say so plainly rather than guessing.\n"
+        "- Keep the answer to 2-4 sentences - clear and complete, not padded.\n\n"
         f"Context:\n{context}\n\nQuestion: {query}"
     )
 
@@ -579,28 +581,6 @@ try:
 except Exception as e:
     DB_READY = False
     st.sidebar.warning(f"Database features unavailable: {e}")
-
-if "startup_check_done" not in st.session_state:
-    st.session_state.startup_check_done = False
-
-if not st.session_state.startup_check_done:
-    st.session_state.startup_check_done = True
-    try:
-        _client = get_chroma_client()
-        _embed_fn = get_embed_fn()
-        _needs_rebuild = False
-        try:
-            _pdf_coll = _client.get_collection(name=PDF_COLLECTION, embedding_function=_embed_fn)
-            if _pdf_coll.count() == 0:
-                _needs_rebuild = True
-        except Exception:
-            _needs_rebuild = True
-
-        if _needs_rebuild:
-            with st.spinner("First load after waking up: rebuilding the search index, please wait (one-time, takes a couple of minutes)..."):
-                rebuild_all_collections_multilingual()
-    except Exception as _e:
-        st.sidebar.warning(f"Auto-rebuild check skipped: {_e}")
 
 with st.sidebar:
     st.header("Login")
@@ -713,7 +693,7 @@ with tab1:
                         source_page = ""
                         source_note = f"[Source: {source_doc}]"
                     else:
-                        documents, metadatas = query_collection(pdf_collection, question)
+                        documents, metadatas = query_collection(pdf_collection, question, n_results=15)
                         safe_metas = [m for m in metadatas if isinstance(m, dict)]
                         sources = sorted({m.get("source") for m in safe_metas if m.get("source")})
                         pages = sorted({m.get("page") for m in safe_metas if m.get("page") is not None})
@@ -837,20 +817,20 @@ with tab3:
 with tab4:
     st.header("Admin / Usage Stats")
 
-    st.caption("🔧 Search index storage: in-memory (rebuilds automatically each time the app starts)")
-    st.caption(f"🔧 PDF folders checked: {[str(p) for p in PDF_SEARCH_DIRS]}")
+    st.caption("🔧 Search index storage: pre-built locally, read from the committed 'db/chroma_db' folder")
+    st.caption(f"🔧 PDF folders checked by manual rebuild: {[str(p) for p in PDF_SEARCH_DIRS]}")
 
-    st.subheader("Rebuild search index for Amharic support")
+    st.subheader("Rebuild search index (this session only)")
     st.caption(
-        "One-time step: rebuilds the search database using a multilingual model, "
-        "so questions typed in Amharic can be matched correctly (not just English). "
-        "Uses the CSV and PDF files already in this repo — no upload needed."
+        "⚠️ This only rebuilds the index in memory for THIS running session - it does NOT save "
+        "permanently, since Streamlit Cloud's filesystem is read-only. For a permanent update, run "
+        "local_rebuild.py on your own computer and upload the resulting db/chroma_db folder to GitHub."
     )
-    if st.button("🔄 Rebuild search index (multilingual)"):
-        with st.spinner("Rebuilding... this can take a few minutes (downloads the multilingual model on first run)."):
+    if st.button("🔄 Rebuild search index (this session only)"):
+        with st.spinner("Rebuilding... this can take a few minutes."):
             try:
                 summary = rebuild_all_collections_multilingual()
-                st.success("Rebuild complete!")
+                st.success("Rebuild complete for this session!")
                 st.text(summary)
             except Exception as e:
                 st.error(f"Rebuild failed: {e}")
@@ -870,7 +850,8 @@ with tab4:
             st.error(f"Could not clear cache: {e}")
 
     st.divider()
-    st.subheader("Upload a new PDF report")
+    st.subheader("Upload a new PDF report (this session only)")
+    st.caption("⚠️ Same limitation as above - won't persist across restarts unless you also rebuild locally and re-upload the database folder.")
     uploaded_pdf = st.file_uploader("Choose a PDF file to index", type="pdf")
     if uploaded_pdf is not None and st.button("Index this PDF"):
         with st.spinner("Extracting and indexing... this may take a few minutes for large PDFs"):
