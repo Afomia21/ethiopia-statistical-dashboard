@@ -619,6 +619,96 @@ if DB_READY and current_user != "anonymous" and st.session_state.history_loaded_
     except Exception as e:
         st.sidebar.warning(f"Could not load chat history: {e}")
 
+def process_question(question: str, amharic_mode: bool):
+    """Runs the full routing + retrieval + answer pipeline for one question.
+    Returns (answer, route, source_doc, source_page)."""
+    cached = get_cached_answer(question) if DB_READY else None
+
+    if cached:
+        cached_answer, cached_route, cached_source_doc, cached_source_page = cached
+        route = cached_route
+        source_doc, source_page = cached_source_doc or "", cached_source_page or ""
+        answer = f"{cached_answer}\n\n_⚡ instant repeat answer from cache_"
+        return answer, route, source_doc, source_page
+
+    route = route_question(question)
+    source_doc, source_page = "", ""
+
+    if route == "sql":
+        if not GROQ_API_KEY:
+            answer = "This type of question needs the Groq API key to generate a query. Please add GROQ_API_KEY to .env."
+        else:
+            sql_client = Groq(api_key=GROQ_API_KEY)
+            try:
+                generated_sql = generate_sql_query(sql_client, question)
+                if not is_safe_select(generated_sql):
+                    answer = f"I couldn't safely run a query for that question. Try rephrasing.\n\n(Generated: {generated_sql})"
+                else:
+                    colnames, rows = execute_dynamic_sql(generated_sql)
+                    if not rows:
+                        answer = "No results found for that question."
+                    else:
+                        lines = [", ".join(f"{c}: {v}" for c, v in zip(colnames, row)) for row in rows]
+                        answer = "\n".join(lines)
+                    source_doc = "PostgreSQL - ESPS-5 aggregate_stats table (AI-generated SQL)"
+                    answer += f"\n\n[Source: {source_doc}]"
+                    answer += f"\n\n_Query used: `{generated_sql}`_"
+            except Exception as e:
+                answer = f"Error running dynamic SQL query: {e}"
+
+    else:
+        if route == "csv":
+            collection = get_stats_collection()
+            documents, metadatas = query_collection(collection, question)
+            source_doc = "ESPS-5 Socioeconomic Survey, 2021/22"
+            source_page = ""
+            source_note = f"[Source: {source_doc}]"
+        else:
+            pdf_collection = get_pdf_collection()
+            if pdf_collection is None:
+                documents, metadatas = [], []
+                source_doc = "ESS PDF report"
+                source_page = ""
+                source_note = f"[Source: {source_doc}]"
+            else:
+                documents, metadatas = query_collection(pdf_collection, question, n_results=15)
+                safe_metas = [m for m in metadatas if isinstance(m, dict)]
+                sources = sorted({m.get("source") for m in safe_metas if m.get("source")})
+                pages = sorted({m.get("page") for m in safe_metas if m.get("page") is not None})
+                source_doc = ", ".join(sources) if sources else "ESS PDF report"
+                source_page = ", ".join(str(p) for p in pages[:3]) if pages else ""
+                if source_page:
+                    source_note = f"[Source: {source_doc}, page(s) {source_page}]"
+                else:
+                    source_note = f"[Source: {source_doc}]"
+
+        if not documents:
+            if route == "pdf":
+                answer = "No PDF has been indexed yet, so I can't answer document-based questions. Ask a statistics question instead (e.g. 'What is the literacy rate in Amhara?'), or index a PDF first."
+            else:
+                answer = "No relevant statistics found for that question."
+        elif GROQ_API_KEY:
+            client = Groq(api_key=GROQ_API_KEY)
+            try:
+                answer = ask_groq(client, question, documents)
+                if amharic_mode:
+                    amharic_answer = translate_to_amharic(answer)
+                    answer += f"\n\n🇪🇹 **አማርኛ:** {amharic_answer}"
+                answer += f"\n\n{source_note}"
+            except Exception as e:
+                answer = f"Error calling Groq API: {e}\n\nRaw matches:\n" + "\n".join(f"- {d}" for d in documents)
+        else:
+            answer = documents[0] + f"\n\n{source_note}"
+
+    if DB_READY:
+        try:
+            save_to_cache(question, answer, route, source_doc, source_page)
+        except Exception:
+            pass
+
+    return answer, route, source_doc, source_page
+
+
 tab1, tab2, tab3, tab4 = st.tabs(["Chatbot", "Data Explorer", "Visualizations", "Admin"])
 
 with tab1:
@@ -626,133 +716,33 @@ with tab1:
 
     if "prefill" not in st.session_state:
         st.session_state.prefill = ""
-
-    question = st.text_input("Type your question:", value=st.session_state.prefill)
-
-    audio_value = st.audio_input("Or record your question")
-    if audio_value is not None and GROQ_API_KEY:
-        voice_client = Groq(api_key=GROQ_API_KEY)
-        try:
-            transcribed = transcribe_audio(voice_client, audio_value.read())
-            if transcribed:
-                st.session_state.prefill = transcribed
-                st.info(f"Heard: \"{transcribed}\" — click Ask to submit, or edit the text above first.")
-        except Exception as e:
-            st.warning(f"Could not transcribe audio: {e}")
+    if "last_audio_id" not in st.session_state:
+        st.session_state.last_audio_id = None
 
     amharic_mode = st.checkbox("Also answer in Amharic")
-    ask_clicked = st.button("Ask")
 
-    if ask_clicked and question.strip():
-        cached = get_cached_answer(question) if DB_READY else None
-
-        if cached:
-            cached_answer, cached_route, cached_source_doc, cached_source_page = cached
-            route = cached_route
-            source_doc, source_page = cached_source_doc or "", cached_source_page or ""
-            answer = f"{cached_answer}\n\n_⚡ instant repeat answer from cache_"
-
-        else:
-            route = route_question(question)
-            source_doc, source_page = "", ""
-
-            if route == "sql":
-                if not GROQ_API_KEY:
-                    answer = "This type of question needs the Groq API key to generate a query. Please add GROQ_API_KEY to .env."
-                else:
-                    sql_client = Groq(api_key=GROQ_API_KEY)
-                    try:
-                        generated_sql = generate_sql_query(sql_client, question)
-                        if not is_safe_select(generated_sql):
-                            answer = f"I couldn't safely run a query for that question. Try rephrasing.\n\n(Generated: {generated_sql})"
-                        else:
-                            colnames, rows = execute_dynamic_sql(generated_sql)
-                            if not rows:
-                                answer = "No results found for that question."
-                            else:
-                                lines = [", ".join(f"{c}: {v}" for c, v in zip(colnames, row)) for row in rows]
-                                answer = "\n".join(lines)
-                            source_doc = "PostgreSQL - ESPS-5 aggregate_stats table (AI-generated SQL)"
-                            answer += f"\n\n[Source: {source_doc}]"
-                            answer += f"\n\n_Query used: `{generated_sql}`_"
-                    except Exception as e:
-                        answer = f"Error running dynamic SQL query: {e}"
-
-            else:
-                if route == "csv":
-                    collection = get_stats_collection()
-                    documents, metadatas = query_collection(collection, question)
-                    source_doc = "ESPS-5 Socioeconomic Survey, 2021/22"
-                    source_page = ""
-                    source_note = f"[Source: {source_doc}]"
-                else:
-                    pdf_collection = get_pdf_collection()
-                    if pdf_collection is None:
-                        documents, metadatas = [], []
-                        source_doc = "ESS PDF report"
-                        source_page = ""
-                        source_note = f"[Source: {source_doc}]"
-                    else:
-                        documents, metadatas = query_collection(pdf_collection, question, n_results=15)
-                        safe_metas = [m for m in metadatas if isinstance(m, dict)]
-                        sources = sorted({m.get("source") for m in safe_metas if m.get("source")})
-                        pages = sorted({m.get("page") for m in safe_metas if m.get("page") is not None})
-                        source_doc = ", ".join(sources) if sources else "ESS PDF report"
-                        source_page = ", ".join(str(p) for p in pages[:3]) if pages else ""
-                        if source_page:
-                            source_note = f"[Source: {source_doc}, page(s) {source_page}]"
-                        else:
-                            source_note = f"[Source: {source_doc}]"
-
-                if not documents:
-                    if route == "pdf":
-                        answer = "No PDF has been indexed yet, so I can't answer document-based questions. Ask a statistics question instead (e.g. 'What is the literacy rate in Amhara?'), or index a PDF first."
-                    else:
-                        answer = "No relevant statistics found for that question."
-                elif GROQ_API_KEY:
-                    client = Groq(api_key=GROQ_API_KEY)
-                    try:
-                        if amharic_mode:
-                            answer = ask_groq(client, question, documents)
-                            amharic_answer = translate_to_amharic(answer)
-                            answer += f"\n\n🇪🇹 **አማርኛ:** {amharic_answer}"
-                        else:
-                            st.markdown("**Chatbot (streaming):**")
-                            answer = st.write_stream(stream_groq_answer(client, question, documents))
-                        answer += f"\n\n{source_note}"
-                    except Exception as e:
-                        answer = f"Error calling Groq API: {e}\n\nRaw matches:\n" + "\n".join(f"- {d}" for d in documents)
-                else:
-                    answer = documents[0] + f"\n\n{source_note}"
-
-            if DB_READY:
-                try:
-                    save_to_cache(question, answer, route, source_doc, source_page)
-                except Exception:
-                    pass
-
-        st.session_state.messages.append((question, answer, route, source_doc, source_page))
-        st.session_state.prefill = ""
-        if DB_READY:
+    voice_question = None
+    audio_value = st.audio_input("🎤 Record a question (optional)")
+    if audio_value is not None and GROQ_API_KEY:
+        audio_bytes = audio_value.read()
+        audio_id = hashlib.md5(audio_bytes).hexdigest()
+        if st.session_state.last_audio_id != audio_id:
+            st.session_state.last_audio_id = audio_id
+            voice_client = Groq(api_key=GROQ_API_KEY)
             try:
-                save_chat(current_user, question, answer, route, source_doc, source_page)
+                transcribed = transcribe_audio(voice_client, audio_bytes)
+                if transcribed:
+                    st.info(f"🎤 Heard: \"{transcribed}\"")
+                    voice_question = transcribed
             except Exception as e:
-                st.warning(f"Could not save chat history: {e}")
-
-    if st.session_state.messages:
-        chat_text = "\n\n".join(
-            f"You: {q}\n(routed to: {route})\nChatbot: {a}"
-            for q, a, route, s_doc, s_page in st.session_state.messages
-        )
-        st.download_button("Download chat as text", chat_text, file_name="chat_history.txt")
+                st.warning(f"Could not transcribe audio: {e}")
 
     ROUTE_ICONS = {"pdf": "📘", "csv": "📊", "sql": "🧮"}
     ROUTE_LABELS = {"pdf": "DHS Final Report", "csv": "ESPS-5 Survey Data", "sql": "Database Query"}
     ROUTE_COLORS = {"pdf": "#1b3a2b", "csv": "#1b2a3a", "sql": "#3a2f1b"}
 
-    for q, a, route, s_doc, s_page in reversed(st.session_state.messages):
+    for q, a, route, s_doc, s_page in st.session_state.messages:
         st.markdown(f"**You:** {q}")
-
         icon = ROUTE_ICONS.get(route, "💬")
         label = ROUTE_LABELS.get(route, route)
         color = ROUTE_COLORS.get(route, "#222222")
@@ -760,7 +750,6 @@ with tab1:
         if s_doc:
             page_part = f", page(s) {s_page}" if s_page else ""
             source_line = f"<div style='margin-top:10px; font-size:0.85em; opacity:0.75;'>Source: {s_doc}{page_part}</div>"
-
         answer_html = a.replace("\n", "<br>")
         st.markdown(
             f"""
@@ -773,7 +762,27 @@ with tab1:
             """,
             unsafe_allow_html=True,
         )
-        st.divider()
+
+    if st.session_state.messages:
+        chat_text = "\n\n".join(
+            f"You: {q}\n(routed to: {route})\nChatbot: {a}"
+            for q, a, route, s_doc, s_page in st.session_state.messages
+        )
+        st.download_button("Download chat as text", chat_text, file_name="chat_history.txt")
+
+    typed_question = st.chat_input("Type your question and press Enter...")
+    final_question = typed_question or voice_question
+
+    if final_question and final_question.strip():
+        final_question = final_question.strip()
+        answer, route, source_doc, source_page = process_question(final_question, amharic_mode)
+        st.session_state.messages.append((final_question, answer, route, source_doc, source_page))
+        if DB_READY:
+            try:
+                save_chat(current_user, final_question, answer, route, source_doc, source_page)
+            except Exception as e:
+                st.warning(f"Could not save chat history: {e}")
+        st.rerun()
 
 with tab2:
     st.header("Data Explorer")
