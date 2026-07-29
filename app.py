@@ -16,7 +16,7 @@ import fitz  # PyMuPDF
 load_dotenv()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
-DB_DIR = Path("db") / "chroma_db"  # pre-built locally with local_rebuild.py, committed to the repo - read-only at runtime
+DB_DIR = Path("chroma_db") / "chroma_db"  # pre-built locally with local_rebuild.py, committed to the repo - read-only at runtime
 STATS_COLLECTION = "esps_stats"
 PDF_COLLECTION = "ess_pdf_docs"
 STATS_FILE = Path("data set") / "preprocessed" / "aggregate_stats.csv"
