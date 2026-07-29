@@ -718,31 +718,8 @@ with tab1:
         st.session_state.prefill = ""
     if "last_audio_id" not in st.session_state:
         st.session_state.last_audio_id = None
-
-    # --- Compact controls row: small Amharic toggle + small mic icon button ---
-    ctrl_col1, ctrl_col2, _spacer = st.columns([1.4, 0.6, 6])
-    with ctrl_col1:
-        amharic_mode = st.checkbox("🇪🇹 Amharic", value=False)
-    with ctrl_col2:
-        audio_value = None
-        with st.popover("🎤"):
-            st.caption("Record a question")
-            audio_value = st.audio_input("Recorder", label_visibility="collapsed")
-
-    voice_question = None
-    if audio_value is not None and GROQ_API_KEY:
-        audio_bytes = audio_value.read()
-        audio_id = hashlib.md5(audio_bytes).hexdigest()
-        if st.session_state.last_audio_id != audio_id:
-            st.session_state.last_audio_id = audio_id
-            voice_client = Groq(api_key=GROQ_API_KEY)
-            try:
-                transcribed = transcribe_audio(voice_client, audio_bytes)
-                if transcribed:
-                    st.info(f"🎤 Heard: \"{transcribed}\"")
-                    voice_question = transcribed
-            except Exception as e:
-                st.warning(f"Could not transcribe audio: {e}")
+    if "chat_input_key" not in st.session_state:
+        st.session_state.chat_input_key = 0
 
     ROUTE_ICONS = {"pdf": "📘", "csv": "📊", "sql": "🧮"}
     ROUTE_LABELS = {"pdf": "DHS Final Report", "csv": "ESPS-5 Survey Data", "sql": "Database Query"}
@@ -777,8 +754,71 @@ with tab1:
         )
         st.download_button("Download chat as text", chat_text, file_name="chat_history.txt")
 
-    typed_question = st.chat_input("Type your question and press Enter...")
-    final_question = typed_question or voice_question
+    st.markdown(
+        """
+        <style>
+        /* Pin the bottom control bar to the very bottom of the browser viewport */
+        div[data-testid="stVerticalBlock"]:has(> div.bottom-bar-marker) {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background-color: var(--background-color, #0e1117);
+            padding: 14px 40px 18px 40px;
+            z-index: 999;
+            border-top: 1px solid rgba(128,128,128,0.25);
+        }
+        /* Leave room at the bottom of the page so chat history isn't hidden behind the bar */
+        .main .block-container {
+            padding-bottom: 130px;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    bottom_bar = st.container()
+    with bottom_bar:
+        st.markdown('<div class="bottom-bar-marker"></div>', unsafe_allow_html=True)
+        col_input, col_amharic, col_mic, col_send = st.columns([5, 1, 1, 1.3])
+
+        with col_input:
+            typed_question = st.text_input(
+                "Ask",
+                placeholder="Ask ESS AI Assistant...",
+                label_visibility="collapsed",
+                key=f"chat_text_{st.session_state.chat_input_key}",
+            )
+        with col_amharic:
+            amharic_mode = st.checkbox("🇪🇹", value=False, help="Also answer in Amharic")
+        with col_mic:
+            audio_value = None
+            with st.popover("🎤"):
+                st.caption("Record a question")
+                audio_value = st.audio_input("Recorder", label_visibility="collapsed")
+        with col_send:
+            send_clicked = st.button("Send ➤", use_container_width=True)
+
+    voice_question = None
+    if audio_value is not None and GROQ_API_KEY:
+        audio_bytes = audio_value.read()
+        audio_id = hashlib.md5(audio_bytes).hexdigest()
+        if st.session_state.last_audio_id != audio_id:
+            st.session_state.last_audio_id = audio_id
+            voice_client = Groq(api_key=GROQ_API_KEY)
+            try:
+                transcribed = transcribe_audio(voice_client, audio_bytes)
+                if transcribed:
+                    st.info(f"🎤 Heard: \"{transcribed}\"")
+                    voice_question = transcribed
+            except Exception as e:
+                st.warning(f"Could not transcribe audio: {e}")
+
+    final_question = None
+    if send_clicked and typed_question.strip():
+        final_question = typed_question.strip()
+    elif voice_question:
+        final_question = voice_question
 
     if final_question and final_question.strip():
         final_question = final_question.strip()
@@ -789,6 +829,7 @@ with tab1:
                 save_chat(current_user, final_question, answer, route, source_doc, source_page)
             except Exception as e:
                 st.warning(f"Could not save chat history: {e}")
+        st.session_state.chat_input_key += 1  # resets the text box for the next question
         st.rerun()
 
 with tab2:
