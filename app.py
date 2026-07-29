@@ -16,7 +16,7 @@ import fitz  # PyMuPDF
 load_dotenv()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
-DB_DIR = Path("chroma_db") / "chroma_db"  # pre-built locally with local_rebuild.py, committed to the repo - read-only at runtime
+DB_DIR = Path("chroma_db")  # pre-built locally with local_rebuild.py, committed to the repo at the root - read-only at runtime
 STATS_COLLECTION = "esps_stats"
 PDF_COLLECTION = "ess_pdf_docs"
 STATS_FILE = Path("data set") / "preprocessed" / "aggregate_stats.csv"
@@ -573,7 +573,99 @@ def transcribe_audio(client: Groq, audio_bytes: bytes) -> str:
     return transcription.text.strip()
 
 
-st.title("Ethiopia Statistical Service Dashboard")
+st.markdown(
+    """
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@500;600;700&display=swap');
+
+    html, body, [class*="css"]  {
+        font-family: 'Quicksand', sans-serif;
+    }
+
+    /* Soft pastel page background */
+    .stApp {
+        background: linear-gradient(180deg, #f5f7ff 0%, #fdf6f9 100%);
+    }
+
+    /* Cute bot header */
+    .ess-bot-header {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        margin-bottom: 4px;
+    }
+    .ess-bot-avatar {
+        font-size: 42px;
+        background: linear-gradient(135deg, #a78bfa, #f9a8d4);
+        border-radius: 50%;
+        width: 64px;
+        height: 64px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 4px 10px rgba(167,139,250,0.35);
+    }
+    .ess-bot-title {
+        font-size: 32px;
+        font-weight: 700;
+        background: linear-gradient(90deg, #7c3aed, #ec4899);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin: 0;
+    }
+    .ess-bot-subtitle {
+        font-size: 14px;
+        color: #7c7c8a;
+        margin-top: -4px;
+    }
+
+    /* Rounded, softer buttons and inputs everywhere */
+    .stButton>button, .stTextInput>div>div>input, .stCheckbox, div[data-baseweb="input"] {
+        border-radius: 14px !important;
+    }
+    .stButton>button {
+        border: none;
+        background: linear-gradient(90deg, #a78bfa, #f472b6);
+        color: white;
+        font-weight: 600;
+        transition: transform 0.15s ease;
+    }
+    .stButton>button:hover {
+        transform: scale(1.03);
+        color: white;
+    }
+
+    /* Cute sidebar login card */
+    .ess-login-card {
+        background: white;
+        border-radius: 18px;
+        padding: 18px 16px 8px 16px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+        margin-bottom: 12px;
+    }
+    .ess-login-title {
+        font-size: 18px;
+        font-weight: 700;
+        color: #7c3aed;
+        margin-bottom: 2px;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+st.markdown(
+    """
+    <div class="ess-bot-header">
+        <div class="ess-bot-avatar">🤖</div>
+        <div>
+            <p class="ess-bot-title">ESS AI Buddy</p>
+            <p class="ess-bot-subtitle">Ethiopia Statistical Service · your friendly stats assistant</p>
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
 try:
     ensure_tables()
@@ -583,17 +675,24 @@ except Exception as e:
     st.sidebar.warning(f"Database features unavailable: {e}")
 
 with st.sidebar:
-    st.header("Login")
+    st.markdown(
+        """
+        <div class="ess-login-card">
+            <div class="ess-login-title">🔐 Login</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
     if "username" not in st.session_state:
         st.session_state.username = ""
     if "history_loaded_for" not in st.session_state:
         st.session_state.history_loaded_for = None
 
-    username_input = st.text_input("Enter your name", value=st.session_state.username)
-    password_input = st.text_input("Password", type="password")
+    username_input = st.text_input("👤 Enter your name", value=st.session_state.username)
+    password_input = st.text_input("🔑 Password", type="password")
     st.caption("New username? Just pick a password - it creates your account automatically.")
 
-    if st.button("Set username") and username_input.strip():
+    if st.button("✨ Set username") and username_input.strip():
         if not password_input:
             st.sidebar.error("Please also enter a password.")
         elif not DB_READY:
@@ -758,15 +857,16 @@ with tab1:
         """
         <style>
         /* Pin the bottom control bar to the very bottom of the browser viewport */
-        div[data-testid="stVerticalBlock"]:has(> div.bottom-bar-marker) {
+        .st-key-bottom_bar {
             position: fixed;
             bottom: 0;
             left: 0;
             right: 0;
-            background-color: var(--background-color, #0e1117);
+            background-color: white;
             padding: 14px 40px 18px 40px;
             z-index: 999;
-            border-top: 1px solid rgba(128,128,128,0.25);
+            border-top: 1px solid rgba(128,128,128,0.2);
+            box-shadow: 0 -4px 14px rgba(0,0,0,0.05);
         }
         /* Leave room at the bottom of the page so chat history isn't hidden behind the bar */
         .main .block-container {
@@ -777,9 +877,7 @@ with tab1:
         unsafe_allow_html=True,
     )
 
-    bottom_bar = st.container()
-    with bottom_bar:
-        st.markdown('<div class="bottom-bar-marker"></div>', unsafe_allow_html=True)
+    with st.container(key="bottom_bar"):
         col_input, col_amharic, col_mic, col_send = st.columns([5, 1, 1, 1.3])
 
         with col_input:
