@@ -14,7 +14,22 @@ import psycopg2
 import fitz  # PyMuPDF
 
 load_dotenv()
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+
+
+def get_secret(key: str, default=None):
+    """Reads a credential from a local .env file first (for local development),
+    then falls back to Streamlit Cloud's secrets manager (Settings -> Secrets),
+    since .env files are never deployed to Streamlit Cloud."""
+    value = os.getenv(key)
+    if value:
+        return value
+    try:
+        return st.secrets[key]
+    except Exception:
+        return default
+
+
+GROQ_API_KEY = get_secret("GROQ_API_KEY")
 
 DB_DIR = Path("chroma_db")  # pre-built locally with local_rebuild.py, committed to the repo at the root - read-only at runtime
 STATS_COLLECTION = "esps_stats"
@@ -25,13 +40,20 @@ MODEL = "llama-3.1-8b-instant"
 st.set_page_config(page_title="ESS Dashboard", layout="wide", initial_sidebar_state="collapsed")
 
 PG_CONFIG = {
-    "dbname": os.getenv("PG_DBNAME", "ethiopia_stats"),
-    "user": os.getenv("PG_USER", "postgres"),
-    "password": os.getenv("PG_PASSWORD"),
-    "host": os.getenv("PG_HOST", "localhost"),
-    "port": os.getenv("PG_PORT", "5432"),
-    "sslmode": os.getenv("PG_SSLMODE", "prefer"),  # hosted DBs (Neon, Supabase) require "require"
+    "dbname": get_secret("PG_DBNAME", "ethiopia_stats"),
+    "user": get_secret("PG_USER", "postgres"),
+    "password": get_secret("PG_PASSWORD"),
+    "host": get_secret("PG_HOST", "localhost"),
+    "port": get_secret("PG_PORT", "5432"),
+    "sslmode": get_secret("PG_SSLMODE", "prefer"),  # hosted DBs (Neon, Supabase) require "require"
 }
+
+if not GROQ_API_KEY:
+    st.sidebar.error(
+        "⚠️ GROQ_API_KEY is not set. On Streamlit Cloud, add it under "
+        "your app's Settings -> Secrets (not just your local .env file), "
+        "or answers will silently fall back to raw, unformatted document text."
+    )
 
 RANK_WORDS = ["highest", "lowest", "most", "least", "best", "worst", "top", "compare", "rank", "maximum", "minimum"]
 PDF_STRONG_WORDS = ["definition", "explain", "describe", "define", "chapter", "meaning of"]
@@ -848,7 +870,11 @@ def process_question(question: str, amharic_mode: bool):
             except Exception as e:
                 answer = f"Error calling Groq API: {e}\n\nRaw matches:\n" + "\n".join(f"- {d}" for d in documents)
         else:
-            answer = documents[0]
+            answer = (
+                "⚠️ I found relevant data, but can't summarize it right now because "
+                "GROQ_API_KEY isn't configured for this app - ask the site owner to set it "
+                "under Settings -> Secrets on Streamlit Cloud."
+            )
 
     if DB_READY:
         try:
