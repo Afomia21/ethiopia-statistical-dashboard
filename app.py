@@ -856,17 +856,29 @@ with tab1:
     st.markdown(
         """
         <style>
-        /* Pin the bottom control bar to the very bottom of the browser viewport */
+        /* Pin the bottom control bar to the bottom of the MAIN content area only
+           (not under the sidebar). Streamlit's default sidebar width is ~21rem. */
         .st-key-bottom_bar {
             position: fixed;
             bottom: 0;
-            left: 0;
+            left: 21rem;
             right: 0;
             background-color: white;
             padding: 14px 40px 18px 40px;
-            z-index: 999;
+            z-index: 998;
             border-top: 1px solid rgba(128,128,128,0.2);
             box-shadow: 0 -4px 14px rgba(0,0,0,0.05);
+            display: flex;
+            justify-content: center;
+        }
+        .st-key-bottom_bar > div {
+            width: 100%;
+            max-width: 900px;
+        }
+        /* If the sidebar is collapsed (e.g. on mobile), reclaim the full width */
+        [data-testid="stSidebar"][aria-expanded="false"] ~ .main .st-key-bottom_bar,
+        section[data-testid="stSidebar"]:not([aria-expanded="true"]) ~ div .st-key-bottom_bar {
+            left: 0;
         }
         /* Leave room at the bottom of the page so chat history isn't hidden behind the bar */
         .main .block-container {
@@ -878,9 +890,7 @@ with tab1:
     )
 
     with st.container(key="bottom_bar"):
-        left_spacer, col_input, col_amharic, col_mic, col_send, right_spacer = st.columns(
-            [1, 5, 1, 1, 1.3, 1]
-        )
+        col_input, col_amharic, col_mic, col_send = st.columns([5, 1, 1, 1.3])
 
         with col_input:
             typed_question = st.text_input(
