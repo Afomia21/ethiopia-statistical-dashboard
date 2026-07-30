@@ -22,7 +22,7 @@ PDF_COLLECTION = "ess_pdf_docs"
 STATS_FILE = Path("data set") / "preprocessed" / "aggregate_stats.csv"
 MODEL = "llama-3.1-8b-instant"
 
-st.set_page_config(page_title="ESS Dashboard", layout="wide")
+st.set_page_config(page_title="ESS Dashboard", layout="wide", initial_sidebar_state="collapsed")
 
 PG_CONFIG = {
     "dbname": os.getenv("PG_DBNAME", "ethiopia_stats"),
@@ -856,58 +856,66 @@ with tab1:
     st.markdown(
         """
         <style>
-        /* Pin the bottom control bar to the bottom of the MAIN content area only
-           (not under the sidebar). Streamlit's default sidebar width is ~21rem. */
-        .st-key-bottom_bar {
-            position: fixed;
-            bottom: 0;
-            left: 21rem;
-            right: 0;
-            background-color: white;
-            padding: 14px 40px 18px 40px;
-            z-index: 998;
-            border-top: 1px solid rgba(128,128,128,0.2);
-            box-shadow: 0 -4px 14px rgba(0,0,0,0.05);
+        /* Vertically + horizontally centers the input card when there's no chat yet */
+        .st-key-ess_center_wrapper {
+            min-height: 52vh;
             display: flex;
+            align-items: center;
             justify-content: center;
         }
-        .st-key-bottom_bar > div {
+        /* The rounded card itself, Claude/Gemini style */
+        .st-key-ess_input_card {
             width: 100%;
-            max-width: 900px;
+            max-width: 700px;
+            margin: 0 auto;
+            background: white;
+            border: 1px solid rgba(0,0,0,0.08);
+            border-radius: 24px;
+            padding: 18px 22px 10px 22px;
+            box-shadow: 0 6px 24px rgba(124,58,237,0.10);
         }
-        /* If the sidebar is collapsed (e.g. on mobile), reclaim the full width */
-        [data-testid="stSidebar"][aria-expanded="false"] ~ .main .st-key-bottom_bar,
-        section[data-testid="stSidebar"]:not([aria-expanded="true"]) ~ div .st-key-bottom_bar {
-            left: 0;
+        /* Make the text input blend into the card - no visible border of its own */
+        .st-key-ess_input_card input[type="text"] {
+            border: none !important;
+            background: transparent !important;
+            box-shadow: none !important;
+            font-size: 16px;
+            padding-left: 2px !important;
         }
-        /* Leave room at the bottom of the page so chat history isn't hidden behind the bar */
-        .main .block-container {
-            padding-bottom: 130px;
+        /* Small icon-style controls row inside the card */
+        .ess-card-icons .stCheckbox label p {
+            font-size: 12px !important;
         }
         </style>
         """,
         unsafe_allow_html=True,
     )
 
-    with st.container(key="bottom_bar"):
-        col_input, col_amharic, col_mic, col_send = st.columns([5, 1, 1, 1.3])
+    chat_is_empty = len(st.session_state.messages) == 0
+    outer = st.container(key="ess_center_wrapper") if chat_is_empty else st.container()
 
-        with col_input:
+    with outer:
+        with st.container(key="ess_input_card"):
             typed_question = st.text_input(
                 "Ask",
                 placeholder="Ask ESS AI Assistant...",
                 label_visibility="collapsed",
                 key=f"chat_text_{st.session_state.chat_input_key}",
             )
-        with col_amharic:
-            amharic_mode = st.checkbox("🇪🇹", value=False, help="Also answer in Amharic")
-        with col_mic:
-            audio_value = None
-            with st.popover("🎤"):
-                st.caption("Record a question")
-                audio_value = st.audio_input("Recorder", label_visibility="collapsed")
-        with col_send:
-            send_clicked = st.button("Send ➤", use_container_width=True)
+            icon_row = st.container()
+            icon_row.markdown('<div class="ess-card-icons">', unsafe_allow_html=True)
+            with icon_row:
+                c_amharic, c_mic, c_spacer, c_send = st.columns([1, 1, 4, 1.3])
+                with c_amharic:
+                    amharic_mode = st.checkbox("🇪🇹", value=False, help="Also answer in Amharic")
+                with c_mic:
+                    audio_value = None
+                    with st.popover("🎤"):
+                        st.caption("Record a question")
+                        audio_value = st.audio_input("Recorder", label_visibility="collapsed")
+                with c_send:
+                    send_clicked = st.button("Send ➤", use_container_width=True)
+            icon_row.markdown('</div>', unsafe_allow_html=True)
 
     voice_question = None
     if audio_value is not None and GROQ_API_KEY:
