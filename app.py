@@ -487,6 +487,60 @@ def get_pdf_collection():
         return None
 
 
+def diagnose_chroma_db() -> str:
+    """Inspects the actual chroma_db on disk and reports what's really in it -
+    used to debug 'I don't have the data' issues by revealing collection
+    name/embedding mismatches between local_rebuild.py and this app."""
+    lines = [f"DB_DIR the app is reading from: {DB_DIR.resolve()}"]
+    lines.append(f"DB_DIR exists on disk: {DB_DIR.exists()}")
+
+    try:
+        client = get_chroma_client()
+    except Exception as e:
+        lines.append(f"Could not open PersistentClient at that path: {e}")
+        return "\n".join(lines)
+
+    try:
+        collections = client.list_collections()
+    except Exception as e:
+        lines.append(f"Could not list collections: {e}")
+        return "\n".join(lines)
+
+    if not collections:
+        lines.append("No collections found at all in this chroma_db - it looks empty or was built at a different path/name.")
+        return "\n".join(lines)
+
+    lines.append(f"Found {len(collections)} collection(s):")
+    for c in collections:
+        name = c.name
+        try:
+            col = client.get_collection(name=name)
+            count = col.count()
+        except Exception as e:
+            count = f"error reading count: {e}"
+        expected_marker = ""
+        if name == PDF_COLLECTION:
+            expected_marker = "  <-- this is what the app expects for PDFs"
+        elif name == STATS_COLLECTION:
+            expected_marker = "  <-- this is what the app expects for CSV stats"
+        lines.append(f"  - '{name}': {count} item(s){expected_marker}")
+
+    if not any(c.name == PDF_COLLECTION for c in collections):
+        lines.append(
+            f"\n⚠️ No collection named '{PDF_COLLECTION}' was found. "
+            "Your local_rebuild.py likely uses a different collection name for PDFs - "
+            "check it uses exactly this name, or update PDF_COLLECTION in app.py to match."
+        )
+    if not any(c.name == STATS_COLLECTION for c in collections):
+        lines.append(
+            f"\n⚠️ No collection named '{STATS_COLLECTION}' was found. "
+            "Your local_rebuild.py likely uses a different collection name for stats - "
+            "check it uses exactly this name, or update STATS_COLLECTION in app.py to match."
+        )
+
+    return "\n".join(lines)
+
+
 @st.cache_data
 def load_stats_df():
     return pd.read_csv(STATS_FILE)
@@ -989,14 +1043,28 @@ with tab3:
 with tab4:
     st.header("Admin / Usage Stats")
 
-    st.caption("🔧 Search index storage: pre-built locally, read from the committed 'db/chroma_db' folder")
+    st.caption("🔧 Search index storage: pre-built locally, read from the committed 'chroma_db' folder at the repo root")
     st.caption(f"🔧 PDF folders checked by manual rebuild: {[str(p) for p in PDF_SEARCH_DIRS]}")
 
+    st.subheader("🔍 Diagnose 'I don't have the data' issues")
+    st.caption(
+        "Run this first if questions keep saying there's no data. It shows exactly what's inside "
+        "chroma_db right now - collection names and item counts - so we can see if it matches what "
+        "the app expects, or if local_rebuild.py used different names."
+    )
+    if st.button("🔍 Check chroma_db contents"):
+        with st.spinner("Inspecting chroma_db..."):
+            try:
+                st.code(diagnose_chroma_db())
+            except Exception as e:
+                st.error(f"Diagnostic failed: {e}")
+
+    st.divider()
     st.subheader("Rebuild search index (this session only)")
     st.caption(
         "⚠️ This only rebuilds the index in memory for THIS running session - it does NOT save "
         "permanently, since Streamlit Cloud's filesystem is read-only. For a permanent update, run "
-        "local_rebuild.py on your own computer and upload the resulting db/chroma_db folder to GitHub."
+        "local_rebuild.py on your own computer and upload the resulting chroma_db folder to GitHub."
     )
     if st.button("🔄 Rebuild search index (this session only)"):
         with st.spinner("Rebuilding... this can take a few minutes."):
