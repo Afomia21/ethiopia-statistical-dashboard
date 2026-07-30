@@ -503,15 +503,14 @@ def build_prompt(query: str, documents: list) -> str:
         "You are the official ESS (Ethiopian Statistical Service) AI Assistant, answering questions "
         "using ONLY the context provided below - never invent numbers or facts not present in the context.\n\n"
         "Guidelines for your answer:\n"
-        "- If the exact figure requested isn't in the context but a closely related figure is (e.g. a "
-        "different but nearby time period, or an overall/national figure instead of a specific breakdown), "
-        "clearly state that the exact figure isn't available, then share the closely related figure you did "
-        "find, being explicit about what period/category it actually covers.\n"
-        "- If multiple context snippets reference the same underlying data (e.g. several reports repeating "
-        "one figure), mention that briefly rather than listing duplicates.\n"
-        "- Be specific: name the actual number, unit, and time period/region whenever you state a figure.\n"
-        "- If truly nothing relevant is in the context, say so plainly rather than guessing.\n"
-        "- Keep the answer to 2-4 sentences - clear and complete, not padded.\n\n"
+        "- Answer in 1-3 short sentences MAX. Be direct - lead with the number/fact, don't build up to it.\n"
+        "- If the exact figure requested isn't in the context but a closely related one is, briefly say so "
+        "in a single clause, then give the closely related figure and what it actually covers.\n"
+        "- If multiple context snippets repeat the same figure, just state it once - never list duplicates.\n"
+        "- Name the actual number, unit, and time period/region - but nothing else. No preamble like "
+        "'According to the documents' or 'Based on the context'.\n"
+        "- If truly nothing relevant is in the context, say so in one sentence.\n"
+        "- Do NOT include a 'Source:' line yourself - that is added separately.\n\n"
         f"Context:\n{context}\n\nQuestion: {query}"
     )
 
@@ -750,7 +749,6 @@ def process_question(question: str, amharic_mode: bool):
                         lines = [", ".join(f"{c}: {v}" for c, v in zip(colnames, row)) for row in rows]
                         answer = "\n".join(lines)
                     source_doc = "PostgreSQL - ESPS-5 aggregate_stats table (AI-generated SQL)"
-                    answer += f"\n\n[Source: {source_doc}]"
                     answer += f"\n\n_Query used: `{generated_sql}`_"
             except Exception as e:
                 answer = f"Error running dynamic SQL query: {e}"
@@ -793,11 +791,10 @@ def process_question(question: str, amharic_mode: bool):
                 if amharic_mode:
                     amharic_answer = translate_to_amharic(answer)
                     answer += f"\n\n🇪🇹 **አማርኛ:** {amharic_answer}"
-                answer += f"\n\n{source_note}"
             except Exception as e:
                 answer = f"Error calling Groq API: {e}\n\nRaw matches:\n" + "\n".join(f"- {d}" for d in documents)
         else:
-            answer = documents[0] + f"\n\n{source_note}"
+            answer = documents[0]
 
     if DB_READY:
         try:
@@ -832,7 +829,7 @@ with tab1:
         source_line = ""
         if s_doc:
             page_part = f", page(s) {s_page}" if s_page else ""
-            source_line = f"<div style='margin-top:10px; font-size:0.85em; opacity:0.75;'>Source: {s_doc}{page_part}</div>"
+            source_line = f"<div style='margin-top:10px; font-size:0.85em; opacity:0.75;'>📌 Source: {s_doc}{page_part}</div>"
         answer_html = a.replace("\n", "<br>")
         st.markdown(
             f"""
