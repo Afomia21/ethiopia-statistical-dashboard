@@ -742,8 +742,17 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-try:
+@st.cache_resource
+def ensure_tables_once():
+    """Runs the CREATE TABLE checks only once for the whole app's lifetime,
+    instead of on every rerun (Streamlit reruns this script on every click,
+    so without caching this was hitting Postgres on every single interaction)."""
     ensure_tables()
+    return True
+
+
+try:
+    ensure_tables_once()
     DB_READY = True
 except Exception as e:
     DB_READY = False
