@@ -1,5 +1,5 @@
 """
-Builds BOTH ChromaDB collections locally (stats + all PDFs in ./pdf),
+Builds BOTH ChromaDB collections locally (stats + all PDFs in ./data/pdf),
 using the SAME multilingual embedding model as the deployed app, so the
 committed database matches exactly what production expects.
 
@@ -7,7 +7,7 @@ Run once locally:
     pip install sentence-transformers pymupdf
     python local_rebuild.py
 
-Then upload the resulting db/chroma_db folder to GitHub (same way you
+Then upload the resulting chroma_db folder to GitHub (same way you
 uploaded the PDFs) so the deployed app starts up with everything already
 built in - no runtime rebuild needed, nothing lost on server restart.
 """
@@ -19,7 +19,7 @@ from chromadb import PersistentClient
 from chromadb.utils import embedding_functions
 import fitz  # PyMuPDF
 
-DB_DIR = Path("db") / "chroma_db"
+DB_DIR = Path("chroma_db")  # must match DB_DIR in app.py exactly - it lives at the repo root, NOT inside a "db" folder
 STATS_COLLECTION = "esps_stats"
 PDF_COLLECTION = "ess_pdf_docs"
 STATS_FILE = Path("data set") / "preprocessed" / "aggregate_stats.csv"
@@ -93,7 +93,7 @@ def main():
     pdf_files = sorted(PDF_DIR.glob("*.pdf"))
     if not pdf_files:
         raise FileNotFoundError(
-            f"No PDFs found in {PDF_DIR}. Make sure all 12 PDFs are in a folder named 'pdf' next to app.py."
+            f"No PDFs found in {PDF_DIR}. Make sure all PDFs are in a folder named 'data/pdf' next to app.py."
         )
 
     total_chunks = 0
@@ -113,7 +113,7 @@ def main():
         total_chunks += len(chunks)
 
     print(f"\nDone. Stats: {len(df)} rows. PDFs: {len(pdf_files)} files, {total_chunks} chunks total.")
-    print(f"\nNow upload the '{DB_DIR}' folder to GitHub, then reboot the Streamlit Cloud app.")
+    print(f"\nNow upload the '{DB_DIR}' folder to GitHub (replacing the existing chroma_db folder), then reboot the Streamlit Cloud app.")
 
 
 if __name__ == "__main__":
