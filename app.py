@@ -39,6 +39,25 @@ MODEL = "llama-3.1-8b-instant"
 
 st.set_page_config(page_title="ESS Dashboard", layout="wide", initial_sidebar_state="collapsed")
 
+# --- Small embeddable widget mode -----------------------------------------
+# Visiting the app with ?widget=1 in the URL shows ONLY the chatbot - no
+# tabs, no login sidebar, no header - so it can be dropped into another
+# website inside a small floating iframe (see the embed snippet provided
+# separately for the website side).
+WIDGET_MODE = st.query_params.get("widget") == "1"
+
+if WIDGET_MODE:
+    st.markdown(
+        """
+        <style>
+        #MainMenu, header, footer {visibility: hidden;}
+        .block-container {padding: 8px 10px 0 10px !important; max-width: 100% !important;}
+        section[data-testid="stSidebar"] {display: none !important;}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
 PG_CONFIG = {
     "dbname": get_secret("PG_DBNAME", "ethiopia_stats"),
     "user": get_secret("PG_USER", "postgres"),
@@ -787,18 +806,29 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.markdown(
-    """
-    <div class="ess-bot-header">
-        <div class="ess-bot-avatar">🤖</div>
-        <div>
-            <p class="ess-bot-title">ESS AI Buddy</p>
-            <p class="ess-bot-subtitle">Ethiopia Statistical Service · your friendly stats assistant</p>
+if WIDGET_MODE:
+    st.markdown(
+        """
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+            <div style="font-size:22px;">🤖</div>
+            <div style="font-weight:700; color:#7c3aed; font-size:16px;">ESS AI Buddy</div>
         </div>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+        """,
+        unsafe_allow_html=True,
+    )
+else:
+    st.markdown(
+        """
+        <div class="ess-bot-header">
+            <div class="ess-bot-avatar">🤖</div>
+            <div>
+                <p class="ess-bot-title">ESS AI Buddy</p>
+                <p class="ess-bot-subtitle">Ethiopia Statistical Service · your friendly stats assistant</p>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 @st.cache_resource
 def ensure_tables_once():
@@ -816,36 +846,42 @@ except Exception as e:
     DB_READY = False
     st.sidebar.warning(f"Database features unavailable: {e}")
 
-with st.sidebar:
-    st.markdown(
-        """
-        <div class="ess-login-card">
-            <div class="ess-login-title">🔐 Login</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+if not WIDGET_MODE:
+    with st.sidebar:
+        st.markdown(
+            """
+            <div class="ess-login-card">
+                <div class="ess-login-title">🔐 Login</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        if "username" not in st.session_state:
+            st.session_state.username = ""
+        if "history_loaded_for" not in st.session_state:
+            st.session_state.history_loaded_for = None
+
+        username_input = st.text_input("👤 Enter your name", value=st.session_state.username)
+        password_input = st.text_input("🔑 Password", type="password")
+        st.caption("New username? Just pick a password - it creates your account automatically.")
+
+        if st.button("✨ Set username") and username_input.strip():
+            if not password_input:
+                st.sidebar.error("Please also enter a password.")
+            elif not DB_READY:
+                st.sidebar.error("Cannot log in - database unavailable.")
+            else:
+                ok, message = login_user(username_input.strip(), password_input)
+                if ok:
+                    st.session_state.username = username_input.strip()
+                    st.sidebar.success(message)
+                else:
+                    st.sidebar.error(message)
+else:
     if "username" not in st.session_state:
         st.session_state.username = ""
     if "history_loaded_for" not in st.session_state:
         st.session_state.history_loaded_for = None
-
-    username_input = st.text_input("👤 Enter your name", value=st.session_state.username)
-    password_input = st.text_input("🔑 Password", type="password")
-    st.caption("New username? Just pick a password - it creates your account automatically.")
-
-    if st.button("✨ Set username") and username_input.strip():
-        if not password_input:
-            st.sidebar.error("Please also enter a password.")
-        elif not DB_READY:
-            st.sidebar.error("Cannot log in - database unavailable.")
-        else:
-            ok, message = login_user(username_input.strip(), password_input)
-            if ok:
-                st.session_state.username = username_input.strip()
-                st.sidebar.success(message)
-            else:
-                st.sidebar.error(message)
 
 current_user = st.session_state.get("username") or "anonymous"
 
@@ -911,7 +947,7 @@ def process_question(question: str, amharic_mode: bool):
                 source_page = ""
                 source_note = f"[Source: {source_doc}]"
             else:
-                documents, metadatas = query_collection(pdf_collection, question, n_results=6)
+                documents, metadatas = query_collection(pdf_collection, question, n_results=8)
                 safe_metas = [m for m in metadatas if isinstance(m, dict)]
                 sources = sorted({m.get("source") for m in safe_metas if m.get("source")})
                 pages = sorted({m.get("page") for m in safe_metas if m.get("page") is not None})
@@ -975,9 +1011,7 @@ def process_question(question: str, amharic_mode: bool):
     return answer, route, source_doc, source_page
 
 
-tab1, tab2, tab3, tab4 = st.tabs(["Chatbot", "Data Explorer", "Visualizations", "Admin"])
-
-with tab1:
+def render_chatbot():
     st.header("Ask the Chatbot")
 
     if "prefill" not in st.session_state:
@@ -1117,139 +1151,148 @@ with tab1:
         st.session_state.chat_input_key += 1  # resets the text box for the next question
         st.rerun()
 
-with tab2:
-    st.header("Data Explorer")
-    df = load_stats_df()
-    region_filter = st.selectbox("Filter by region (optional)", ["All"] + sorted(df["group"].unique().tolist()))
-    if region_filter != "All":
-        st.dataframe(df[df["group"] == region_filter])
-    else:
-        st.dataframe(df)
 
-with tab3:
-    st.header("Visualizations")
-    df = load_stats_df()
+if WIDGET_MODE:
+    render_chatbot()
+else:
+    tab1, tab2, tab3, tab4 = st.tabs(["Chatbot", "Data Explorer", "Visualizations", "Admin"])
 
-    st.subheader("All regions")
-    indicator = st.selectbox("Choose an indicator", sorted(df["indicator"].unique()))
-    chart_df = df[df["indicator"] == indicator][["group", "value"]].set_index("group")
-    st.bar_chart(chart_df)
+    with tab1:
+        render_chatbot()
 
-    st.divider()
-    st.subheader("Compare two regions")
-    regions = sorted(df["group"].unique().tolist())
-    col_a, col_b = st.columns(2)
-    region_a = col_a.selectbox("Region A", regions, index=0)
-    region_b = col_b.selectbox("Region B", regions, index=min(1, len(regions) - 1))
+    with tab2:
+        st.header("Data Explorer")
+        df = load_stats_df()
+        region_filter = st.selectbox("Filter by region (optional)", ["All"] + sorted(df["group"].unique().tolist()))
+        if region_filter != "All":
+            st.dataframe(df[df["group"] == region_filter])
+        else:
+            st.dataframe(df)
 
-    compare_indicator = st.selectbox("Indicator to compare", sorted(df["indicator"].unique()), key="compare_indicator")
-    row_a = df[(df["group"] == region_a) & (df["indicator"] == compare_indicator)]
-    row_b = df[(df["group"] == region_b) & (df["indicator"] == compare_indicator)]
+    with tab3:
+        st.header("Visualizations")
+        df = load_stats_df()
 
-    if not row_a.empty and not row_b.empty:
-        val_a = row_a["value"].iloc[0]
-        val_b = row_b["value"].iloc[0]
-        compare_df = pd.DataFrame({"value": [val_a, val_b]}, index=[region_a, region_b])
-        st.bar_chart(compare_df)
-        diff = val_a - val_b
-        st.caption(f"{region_a} vs {region_b}: difference of {diff:.2f}")
-    else:
-        st.info("No data available for one of the selected regions for this indicator.")
+        st.subheader("All regions")
+        indicator = st.selectbox("Choose an indicator", sorted(df["indicator"].unique()))
+        chart_df = df[df["indicator"] == indicator][["group", "value"]].set_index("group")
+        st.bar_chart(chart_df)
 
-with tab4:
-    st.header("Admin / Usage Stats")
+        st.divider()
+        st.subheader("Compare two regions")
+        regions = sorted(df["group"].unique().tolist())
+        col_a, col_b = st.columns(2)
+        region_a = col_a.selectbox("Region A", regions, index=0)
+        region_b = col_b.selectbox("Region B", regions, index=min(1, len(regions) - 1))
 
-    st.caption("🔧 Search index storage: pre-built locally, read from the committed 'chroma_db' folder at the repo root")
-    st.caption(f"🔧 PDF folders checked by manual rebuild: {[str(p) for p in PDF_SEARCH_DIRS]}")
+        compare_indicator = st.selectbox("Indicator to compare", sorted(df["indicator"].unique()), key="compare_indicator")
+        row_a = df[(df["group"] == region_a) & (df["indicator"] == compare_indicator)]
+        row_b = df[(df["group"] == region_b) & (df["indicator"] == compare_indicator)]
 
-    st.subheader("🔍 Diagnose 'I don't have the data' issues")
-    st.caption(
-        "Run this first if questions keep saying there's no data. It shows exactly what's inside "
-        "chroma_db right now - collection names and item counts - so we can see if it matches what "
-        "the app expects, or if local_rebuild.py used different names."
-    )
-    if st.button("🔍 Check chroma_db contents"):
-        with st.spinner("Inspecting chroma_db..."):
+        if not row_a.empty and not row_b.empty:
+            val_a = row_a["value"].iloc[0]
+            val_b = row_b["value"].iloc[0]
+            compare_df = pd.DataFrame({"value": [val_a, val_b]}, index=[region_a, region_b])
+            st.bar_chart(compare_df)
+            diff = val_a - val_b
+            st.caption(f"{region_a} vs {region_b}: difference of {diff:.2f}")
+        else:
+            st.info("No data available for one of the selected regions for this indicator.")
+
+    with tab4:
+        st.header("Admin / Usage Stats")
+
+        st.caption("🔧 Search index storage: pre-built locally, read from the committed 'chroma_db' folder at the repo root")
+        st.caption(f"🔧 PDF folders checked by manual rebuild: {[str(p) for p in PDF_SEARCH_DIRS]}")
+
+        st.subheader("🔍 Diagnose 'I don't have the data' issues")
+        st.caption(
+            "Run this first if questions keep saying there's no data. It shows exactly what's inside "
+            "chroma_db right now - collection names and item counts - so we can see if it matches what "
+            "the app expects, or if local_rebuild.py used different names."
+        )
+        if st.button("🔍 Check chroma_db contents"):
+            with st.spinner("Inspecting chroma_db..."):
+                try:
+                    st.code(diagnose_chroma_db())
+                except Exception as e:
+                    st.error(f"Diagnostic failed: {e}")
+
+        st.divider()
+        st.subheader("Rebuild search index (this session only)")
+        st.caption(
+            "⚠️ This only rebuilds the index in memory for THIS running session - it does NOT save "
+            "permanently, since Streamlit Cloud's filesystem is read-only. For a permanent update, run "
+            "local_rebuild.py on your own computer and upload the resulting chroma_db folder to GitHub."
+        )
+        if st.button("🔄 Rebuild search index (this session only)"):
+            with st.spinner("Rebuilding... this can take a few minutes."):
+                try:
+                    summary = rebuild_all_collections_multilingual()
+                    st.success("Rebuild complete for this session!")
+                    st.text(summary)
+                except Exception as e:
+                    st.error(f"Rebuild failed: {e}")
+
+        st.divider()
+        st.subheader("Clear cached answers")
+        st.caption(
+            "If you just rebuilt the search index or uploaded a new PDF, old cached answers "
+            "may still show up for questions asked before the update. Clear the cache to force "
+            "fresh answers for every question."
+        )
+        if st.button("🗑️ Clear all cached answers"):
             try:
-                st.code(diagnose_chroma_db())
+                deleted = clear_query_cache()
+                st.success(f"Cleared {deleted} cached answer(s).")
             except Exception as e:
-                st.error(f"Diagnostic failed: {e}")
+                st.error(f"Could not clear cache: {e}")
 
-    st.divider()
-    st.subheader("Rebuild search index (this session only)")
-    st.caption(
-        "⚠️ This only rebuilds the index in memory for THIS running session - it does NOT save "
-        "permanently, since Streamlit Cloud's filesystem is read-only. For a permanent update, run "
-        "local_rebuild.py on your own computer and upload the resulting chroma_db folder to GitHub."
-    )
-    if st.button("🔄 Rebuild search index (this session only)"):
-        with st.spinner("Rebuilding... this can take a few minutes."):
+        st.divider()
+        st.subheader("Upload a new PDF report (this session only)")
+        st.caption("⚠️ Same limitation as above - won't persist across restarts unless you also rebuild locally and re-upload the database folder.")
+        uploaded_pdf = st.file_uploader("Choose a PDF file to index", type="pdf")
+        if uploaded_pdf is not None and st.button("Index this PDF"):
+            with st.spinner("Extracting and indexing... this may take a few minutes for large PDFs"):
+                try:
+                    pdf_bytes = uploaded_pdf.read()
+                    chunk_count = index_uploaded_pdf(pdf_bytes, uploaded_pdf.name)
+                    if DB_READY:
+                        save_document_record(uploaded_pdf.name, chunk_count)
+                    st.success(f"Indexed '{uploaded_pdf.name}': {chunk_count} chunks added to the PDF search database.")
+                except Exception as e:
+                    st.error(f"Indexing failed: {e}")
+
+        st.divider()
+
+        if not DB_READY:
+            st.warning("Database not connected - admin stats unavailable.")
+        else:
             try:
-                summary = rebuild_all_collections_multilingual()
-                st.success("Rebuild complete for this session!")
-                st.text(summary)
+                total, by_route, users_count, recent = get_admin_stats()
+                col1, col2 = st.columns(2)
+                col1.metric("Total questions asked", total)
+                col2.metric("Unique users", users_count)
+
+                if by_route:
+                    st.subheader("Questions by route")
+                    route_df = pd.DataFrame(by_route, columns=["route", "count"]).set_index("route")
+                    st.bar_chart(route_df)
+
+                try:
+                    docs = get_indexed_documents()
+                    if docs:
+                        st.subheader("Indexed documents")
+                        docs_df = pd.DataFrame(docs, columns=["filename", "indexed_at", "chunk_count"])
+                        st.dataframe(docs_df)
+                except Exception as e:
+                    st.warning(f"Could not load documents list: {e}")
+
+                if recent:
+                    st.subheader("Recent activity")
+                    recent_df = pd.DataFrame(recent, columns=["username", "question", "route", "time"])
+                    st.dataframe(recent_df)
+                else:
+                    st.info("No questions asked yet.")
             except Exception as e:
-                st.error(f"Rebuild failed: {e}")
-
-    st.divider()
-    st.subheader("Clear cached answers")
-    st.caption(
-        "If you just rebuilt the search index or uploaded a new PDF, old cached answers "
-        "may still show up for questions asked before the update. Clear the cache to force "
-        "fresh answers for every question."
-    )
-    if st.button("🗑️ Clear all cached answers"):
-        try:
-            deleted = clear_query_cache()
-            st.success(f"Cleared {deleted} cached answer(s).")
-        except Exception as e:
-            st.error(f"Could not clear cache: {e}")
-
-    st.divider()
-    st.subheader("Upload a new PDF report (this session only)")
-    st.caption("⚠️ Same limitation as above - won't persist across restarts unless you also rebuild locally and re-upload the database folder.")
-    uploaded_pdf = st.file_uploader("Choose a PDF file to index", type="pdf")
-    if uploaded_pdf is not None and st.button("Index this PDF"):
-        with st.spinner("Extracting and indexing... this may take a few minutes for large PDFs"):
-            try:
-                pdf_bytes = uploaded_pdf.read()
-                chunk_count = index_uploaded_pdf(pdf_bytes, uploaded_pdf.name)
-                if DB_READY:
-                    save_document_record(uploaded_pdf.name, chunk_count)
-                st.success(f"Indexed '{uploaded_pdf.name}': {chunk_count} chunks added to the PDF search database.")
-            except Exception as e:
-                st.error(f"Indexing failed: {e}")
-
-    st.divider()
-
-    if not DB_READY:
-        st.warning("Database not connected - admin stats unavailable.")
-    else:
-        try:
-            total, by_route, users_count, recent = get_admin_stats()
-            col1, col2 = st.columns(2)
-            col1.metric("Total questions asked", total)
-            col2.metric("Unique users", users_count)
-
-            if by_route:
-                st.subheader("Questions by route")
-                route_df = pd.DataFrame(by_route, columns=["route", "count"]).set_index("route")
-                st.bar_chart(route_df)
-
-            try:
-                docs = get_indexed_documents()
-                if docs:
-                    st.subheader("Indexed documents")
-                    docs_df = pd.DataFrame(docs, columns=["filename", "indexed_at", "chunk_count"])
-                    st.dataframe(docs_df)
-            except Exception as e:
-                st.warning(f"Could not load documents list: {e}")
-
-            if recent:
-                st.subheader("Recent activity")
-                recent_df = pd.DataFrame(recent, columns=["username", "question", "route", "time"])
-                st.dataframe(recent_df)
-            else:
-                st.info("No questions asked yet.")
-        except Exception as e:
-            st.error(f"Could not load admin stats: {e}")
+                st.error(f"Could not load admin stats: {e}")
