@@ -357,15 +357,61 @@ def split_pdf_text(text: str, chunk_size: int = 1200, overlap: int = 150) -> lis
     return chunks
 
 
+def extract_tables_as_text(page) -> list:
+    """Detects tables on a page and turns each into clean pipe-separated rows,
+    so table values become their own searchable chunks instead of being lost
+    or mashed into paragraph text. Mirrors local_rebuild.py's version."""
+    table_texts = []
+    try:
+        found = page.find_tables()
+    except Exception:
+        return table_texts
+
+    for table_index, table in enumerate(found.tables):
+        try:
+            rows = table.extract()
+        except Exception:
+            continue
+        if not rows:
+            continue
+
+        lines = []
+        header = rows[0]
+        header_line = " | ".join(str(c).strip() if c is not None else "" for c in header)
+        lines.append(header_line)
+        lines.append("-" * len(header_line))
+        for row in rows[1:]:
+            cleaned = [str(c).strip() if c is not None else "" for c in row]
+            if any(cleaned):
+                lines.append(" | ".join(cleaned))
+
+        table_text = "\n".join(lines).strip()
+        if table_text and len(table_text) > 15:
+            table_texts.append((table_index, table_text))
+
+    return table_texts
+
+
 def extract_pdf_chunks_from_bytes(pdf_bytes: bytes, filename: str) -> list:
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     chunks = []
     for page_number in range(len(doc)):
-        page_text = doc[page_number].get_text().strip()
-        if not page_text or len(page_text) < 20:
-            continue
-        for i, chunk in enumerate(split_pdf_text(page_text)):
-            chunks.append({"text": chunk, "source": filename, "page": page_number + 1, "chunk_index": i})
+        page = doc[page_number]
+        page_text = page.get_text().strip()
+        if page_text and len(page_text) >= 20:
+            for i, chunk in enumerate(split_pdf_text(page_text)):
+                chunks.append({
+                    "text": chunk, "source": filename, "page": page_number + 1,
+                    "chunk_index": i, "content_type": "text",
+                })
+
+        for table_index, table_text in extract_tables_as_text(page):
+            labeled = f"[Table on page {page_number + 1}]\n{table_text}"
+            for i, chunk in enumerate(split_pdf_text(labeled, chunk_size=1500)):
+                chunks.append({
+                    "text": chunk, "source": filename, "page": page_number + 1,
+                    "chunk_index": f"table{table_index}_{i}", "content_type": "table",
+                })
     doc.close()
     return chunks
 
@@ -387,7 +433,13 @@ def index_uploaded_pdf(pdf_bytes: bytes, filename: str, client=None, collection=
     safe_name = "".join(c if c.isalnum() else "_" for c in filename)
     ids = [f"pdf_{safe_name}_{i}" for i in range(len(chunks))]
     documents = [c["text"] for c in chunks]
-    metadatas = [{"source": c["source"], "page": c["page"], "chunk_index": c["chunk_index"]} for c in chunks]
+    metadatas = [
+        {
+            "source": c["source"], "page": c["page"],
+            "chunk_index": str(c["chunk_index"]), "content_type": c.get("content_type", "text"),
+        }
+        for c in chunks
+    ]
 
     batch_size = 50
     for start in range(0, len(documents), batch_size):
@@ -573,18 +625,24 @@ def query_collection(collection, query: str, n_results: int = 8):
     return results.get("documents", [[]])[0], results.get("metadatas", [[]])[0]
 
 
-def build_prompt(query: str, documents: list) -> str:
-    context = "\n".join(f"- {d}" for d in documents)
+def build_prompt(query: str, documents: list, max_chars_per_doc: int = 800) -> str:
+    # Truncate each retrieved chunk - Groq's free tier caps requests at 6000 tokens/minute,
+    # and sending too many full-length chunks was blowing past that limit (causing 413 errors
+    # that fell back to an unformatted raw dump instead of a real answer).
+    trimmed = [d[:max_chars_per_doc] for d in documents]
+    context = "\n".join(f"- {d}" for d in trimmed)
     return (
         "You are the official ESS (Ethiopian Statistical Service) AI Assistant, answering questions "
         "using ONLY the context provided below - never invent numbers or facts not present in the context.\n\n"
         "Guidelines for your answer:\n"
-        "- Answer in 1-3 short sentences MAX. Be direct - lead with the number/fact, don't build up to it.\n"
-        "- If the exact figure requested isn't in the context but a closely related one is, briefly say so "
-        "in a single clause, then give the closely related figure and what it actually covers.\n"
-        "- If multiple context snippets repeat the same figure, just state it once - never list duplicates.\n"
-        "- Name the actual number, unit, and time period/region - but nothing else. No preamble like "
-        "'According to the documents' or 'Based on the context'.\n"
+        "- If the question asks for ONE specific fact/number: answer in 1-2 short sentences, lead with "
+        "the number/fact directly, no preamble like 'According to the documents'.\n"
+        "- If the question asks about MULTIPLE things (e.g. 'list the reports', 'what does each dataset "
+        "cover', 'tell me about X and Y'): answer with a short bullet list, one line per item, still no "
+        "filler sentences before or after the list.\n"
+        "- Never pad the answer or repeat the same figure twice.\n"
+        "- If the exact figure requested isn't in the context but a closely related one is, say so in a "
+        "short clause, then give the closely related figure and what it actually covers.\n"
         "- If truly nothing relevant is in the context, say so in one sentence.\n"
         "- Do NOT include a 'Source:' line yourself - that is added separately.\n\n"
         f"Context:\n{context}\n\nQuestion: {query}"
@@ -616,7 +674,7 @@ def ask_groq(client: Groq, query: str, documents: list) -> str:
         client,
         model=MODEL,
         messages=[{"role": "user", "content": prompt}],
-        max_tokens=512,
+        max_tokens=300,
     )
     return response.choices[0].message.content.strip()
 
@@ -853,7 +911,7 @@ def process_question(question: str, amharic_mode: bool):
                 source_page = ""
                 source_note = f"[Source: {source_doc}]"
             else:
-                documents, metadatas = query_collection(pdf_collection, question, n_results=15)
+                documents, metadatas = query_collection(pdf_collection, question, n_results=6)
                 safe_metas = [m for m in metadatas if isinstance(m, dict)]
                 sources = sorted({m.get("source") for m in safe_metas if m.get("source")})
                 pages = sorted({m.get("page") for m in safe_metas if m.get("page") is not None})
@@ -877,7 +935,30 @@ def process_question(question: str, amharic_mode: bool):
                     amharic_answer = translate_to_amharic(answer)
                     answer += f"\n\n🇪🇹 **አማርኛ:** {amharic_answer}"
             except Exception as e:
-                answer = f"Error calling Groq API: {e}\n\nRaw matches:\n" + "\n".join(f"- {d}" for d in documents)
+                error_text = str(e).lower()
+                too_large = "413" in error_text or "too large" in error_text or "rate_limit_exceeded" in error_text
+                if too_large:
+                    # Retry once with far less context - usually enough to fit under the token limit
+                    try:
+                        small_prompt = build_prompt(question, documents[:2], max_chars_per_doc=200)
+                        response = call_groq_with_backoff(
+                            client,
+                            model=MODEL,
+                            messages=[{"role": "user", "content": small_prompt}],
+                            max_tokens=200,
+                        )
+                        answer = response.choices[0].message.content.strip()
+                        if amharic_mode:
+                            amharic_answer = translate_to_amharic(answer)
+                            answer += f"\n\n🇪🇹 **አማርኛ:** {amharic_answer}"
+                    except Exception:
+                        answer = (
+                            "⚠️ That question needed more data than the AI service allows right now "
+                            "(free-tier rate limit). Try asking something more specific, or try again "
+                            "in a minute."
+                        )
+                else:
+                    answer = "⚠️ Something went wrong generating an answer. Please try rephrasing your question."
         else:
             answer = (
                 "⚠️ I found relevant data, but can't summarize it right now because "

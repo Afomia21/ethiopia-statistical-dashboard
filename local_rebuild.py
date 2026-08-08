@@ -41,15 +41,63 @@ def split_pdf_text(text: str, chunk_size: int = 1200, overlap: int = 150) -> lis
     return chunks
 
 
+def extract_tables_as_text(page) -> list:
+    """Detects tables on a page and turns each into clean pipe-separated rows,
+    so table values (e.g. inflation tables, survey breakdowns) become their
+    own searchable chunks instead of being lost or mashed into paragraph text."""
+    table_texts = []
+    try:
+        found = page.find_tables()
+    except Exception:
+        return table_texts
+
+    for table_index, table in enumerate(found.tables):
+        try:
+            rows = table.extract()
+        except Exception:
+            continue
+        if not rows:
+            continue
+
+        lines = []
+        header = rows[0]
+        header_line = " | ".join(str(c).strip() if c is not None else "" for c in header)
+        lines.append(header_line)
+        lines.append("-" * len(header_line))
+        for row in rows[1:]:
+            cleaned = [str(c).strip() if c is not None else "" for c in row]
+            if any(cleaned):
+                lines.append(" | ".join(cleaned))
+
+        table_text = "\n".join(lines).strip()
+        if table_text and len(table_text) > 15:
+            table_texts.append((table_index, table_text))
+
+    return table_texts
+
+
 def extract_pdf_chunks(pdf_path: Path) -> list:
     doc = fitz.open(pdf_path)
     chunks = []
     for page_number in range(len(doc)):
-        page_text = doc[page_number].get_text().strip()
-        if not page_text or len(page_text) < 20:
-            continue
-        for i, chunk in enumerate(split_pdf_text(page_text)):
-            chunks.append({"text": chunk, "source": pdf_path.name, "page": page_number + 1, "chunk_index": i})
+        page = doc[page_number]
+        page_text = page.get_text().strip()
+        if page_text and len(page_text) >= 20:
+            for i, chunk in enumerate(split_pdf_text(page_text)):
+                chunks.append({
+                    "text": chunk, "source": pdf_path.name, "page": page_number + 1,
+                    "chunk_index": i, "content_type": "text",
+                })
+
+        # Tables get extracted separately and clearly labeled, so the AI can
+        # cite exact row/column values instead of just narrative paragraphs.
+        for table_index, table_text in extract_tables_as_text(page):
+            labeled = f"[Table on page {page_number + 1}]\n{table_text}"
+            for i, chunk in enumerate(split_pdf_text(labeled, chunk_size=1500)):
+                chunks.append({
+                    "text": chunk, "source": pdf_path.name, "page": page_number + 1,
+                    "chunk_index": f"table{table_index}_{i}", "content_type": "table",
+                })
     doc.close()
     return chunks
 
@@ -97,22 +145,32 @@ def main():
         )
 
     total_chunks = 0
+    total_table_chunks = 0
     for pdf_path in pdf_files:
         print(f"  Extracting {pdf_path.name} ...")
         chunks = extract_pdf_chunks(pdf_path)
         safe_name = "".join(c if c.isalnum() else "_" for c in pdf_path.name)
         ids = [f"pdf_{safe_name}_{i}" for i in range(len(chunks))]
         documents = [c["text"] for c in chunks]
-        metadatas = [{"source": c["source"], "page": c["page"], "chunk_index": c["chunk_index"]} for c in chunks]
+        metadatas = [
+            {
+                "source": c["source"], "page": c["page"],
+                "chunk_index": str(c["chunk_index"]), "content_type": c.get("content_type", "text"),
+            }
+            for c in chunks
+        ]
 
         batch_size = 50
         for start in range(0, len(documents), batch_size):
             end = min(start + batch_size, len(documents))
             pdf_collection.add(ids=ids[start:end], documents=documents[start:end], metadatas=metadatas[start:end])
-        print(f"    {len(chunks)} chunks added.")
+        table_count = sum(1 for c in chunks if c.get("content_type") == "table")
+        total_table_chunks += table_count
+        print(f"    {len(chunks)} chunks added ({table_count} from tables).")
         total_chunks += len(chunks)
 
-    print(f"\nDone. Stats: {len(df)} rows. PDFs: {len(pdf_files)} files, {total_chunks} chunks total.")
+    print(f"\nDone. Stats: {len(df)} rows. PDFs: {len(pdf_files)} files, {total_chunks} chunks total "
+          f"({total_table_chunks} table chunks).")
     print(f"\nNow upload the '{DB_DIR}' folder to GitHub (replacing the existing chroma_db folder), then reboot the Streamlit Cloud app.")
 
 
