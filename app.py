@@ -53,6 +53,19 @@ if WIDGET_MODE:
         #MainMenu, header, footer {visibility: hidden;}
         .block-container {padding: 8px 10px 0 10px !important; max-width: 100% !important;}
         section[data-testid="stSidebar"] {display: none !important;}
+
+        /* Match the ESS site's own deep-blue + gold branding instead of the
+           purple/pink dashboard theme, so the widget looks native when
+           embedded on ess.gov.et rather than mismatched. */
+        .stApp {
+            background: #f4f6fa !important;
+        }
+        .stButton>button {
+            background: linear-gradient(90deg, #1a3e72, #2c5aa0) !important;
+        }
+        div[data-testid="stChatMessage"], .st-key-ess_input_card {
+            border-color: #1a3e72 !important;
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -811,7 +824,7 @@ if WIDGET_MODE:
         """
         <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
             <div style="font-size:22px;">🤖</div>
-            <div style="font-weight:700; color:#7c3aed; font-size:16px;">ESS AI Buddy</div>
+            <div style="font-weight:700; color:#1a3e72; font-size:16px;">ESS AI Buddy</div>
         </div>
         """,
         unsafe_allow_html=True,
