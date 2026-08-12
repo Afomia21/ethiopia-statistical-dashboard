@@ -42,8 +42,7 @@ st.set_page_config(page_title="ESS Dashboard", layout="wide", initial_sidebar_st
 # --- Small embeddable widget mode -----------------------------------------
 # Visiting the app with ?widget=1 in the URL shows ONLY the chatbot - no
 # tabs, no login sidebar, no header - so it can be dropped into another
-# website inside a small floating iframe (see the embed snippet provided
-# separately for the website side).
+# website inside a small floating iframe.
 WIDGET_MODE = st.query_params.get("widget") == "1"
 
 if WIDGET_MODE:
@@ -392,7 +391,7 @@ def split_pdf_text(text: str, chunk_size: int = 1200, overlap: int = 150) -> lis
 def extract_tables_as_text(page) -> list:
     """Detects tables on a page and turns each into clean pipe-separated rows,
     so table values become their own searchable chunks instead of being lost
-    or mashed into paragraph text. Mirrors local_rebuild.py's version."""
+    or mashed into paragraph text."""
     table_texts = []
     try:
         found = page.find_tables()
@@ -843,6 +842,7 @@ else:
         unsafe_allow_html=True,
     )
 
+
 @st.cache_resource
 def ensure_tables_once():
     """Runs the CREATE TABLE checks only once for the whole app's lifetime,
@@ -909,6 +909,7 @@ if DB_READY and current_user != "anonymous" and st.session_state.history_loaded_
     except Exception as e:
         st.sidebar.warning(f"Could not load chat history: {e}")
 
+
 def process_question(question: str, amharic_mode: bool):
     """Runs the full routing + retrieval + answer pipeline for one question.
     Returns (answer, route, source_doc, source_page)."""
@@ -951,14 +952,12 @@ def process_question(question: str, amharic_mode: bool):
             documents, metadatas = query_collection(collection, question)
             source_doc = "ESPS-5 Socioeconomic Survey, 2021/22"
             source_page = ""
-            source_note = f"[Source: {source_doc}]"
         else:
             pdf_collection = get_pdf_collection()
             if pdf_collection is None:
                 documents, metadatas = [], []
                 source_doc = "ESS PDF report"
                 source_page = ""
-                source_note = f"[Source: {source_doc}]"
             else:
                 documents, metadatas = query_collection(pdf_collection, question, n_results=8)
                 safe_metas = [m for m in metadatas if isinstance(m, dict)]
@@ -966,10 +965,6 @@ def process_question(question: str, amharic_mode: bool):
                 pages = sorted({m.get("page") for m in safe_metas if m.get("page") is not None})
                 source_doc = ", ".join(sources) if sources else "ESS PDF report"
                 source_page = ", ".join(str(p) for p in pages[:3]) if pages else ""
-                if source_page:
-                    source_note = f"[Source: {source_doc}, page(s) {source_page}]"
-                else:
-                    source_note = f"[Source: {source_doc}]"
 
         if not documents:
             if route == "pdf":
@@ -987,7 +982,6 @@ def process_question(question: str, amharic_mode: bool):
                 error_text = str(e).lower()
                 too_large = "413" in error_text or "too large" in error_text or "rate_limit_exceeded" in error_text
                 if too_large:
-                    # Retry once with far less context - usually enough to fit under the token limit
                     try:
                         small_prompt = build_prompt(question, documents[:2], max_chars_per_doc=200)
                         response = call_groq_with_backoff(
