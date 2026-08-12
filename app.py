@@ -959,7 +959,7 @@ def process_question(question: str, amharic_mode: bool):
                 source_doc = "ESS PDF report"
                 source_page = ""
             else:
-                documents, metadatas = query_collection(pdf_collection, question, n_results=8)
+                documents, metadatas = query_collection(pdf_collection, question, n_results=12)
                 safe_metas = [m for m in metadatas if isinstance(m, dict)]
                 sources = sorted({m.get("source") for m in safe_metas if m.get("source")})
                 pages = sorted({m.get("page") for m in safe_metas if m.get("page") is not None})
