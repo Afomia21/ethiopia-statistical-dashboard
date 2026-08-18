@@ -21,21 +21,15 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from core import process_question, get_embed_fn, get_chroma_client
+from core import process_question
 
 app = FastAPI(title="ESS AI Buddy - small widget backend")
 
-
-@app.on_event("startup")
-def warm_up():
-    """Loads the language-understanding model and connects to the database
-    right when the server starts, instead of waiting for the first visitor
-    to ask a question - so nobody has to sit through a slow first answer."""
-    try:
-        get_embed_fn()
-        get_chroma_client()
-    except Exception:
-        pass  # if this fails, the first real question will just retry it
+# Note: we intentionally do NOT pre-load the AI model here anymore.
+# On free/low-memory hosting, loading it immediately at startup can use
+# more memory than is available, causing the server to fail before it
+# even finishes starting. Loading it lazily (on the first real question
+# instead) gives the server a much better chance of starting successfully.
 
 # Allow the widget to call this API from any website. Once you know the
 # exact real website domain (e.g. https://ess.gov.et), it's safer to
