@@ -1089,8 +1089,8 @@ def render_chatbot():
         }
         /* Made the input card smaller/more compact */
         .st-key-ess_input_card {
-            max-width: 480px;
-            padding: 12px 16px 4px 16px;
+            max-width: 380px;
+            padding: 6px 10px 3px 10px;
         }
 
         /* Floating voice + language pill, bottom-right of the screen -
@@ -1112,13 +1112,20 @@ def render_chatbot():
         .st-key-ess_floating_controls .stPopover {
             margin: 0 !important;
         }
-        /* Make the text input blend into the card - no visible border of its own */
+        /* Make the text input blend into the card - no visible border of its own,
+           and small: shorter height, smaller font, tighter padding */
         .st-key-ess_input_card input[type="text"] {
             border: none !important;
             background: transparent !important;
             box-shadow: none !important;
-            font-size: 16px;
-            padding-left: 2px !important;
+            font-size: 13px !important;
+            padding: 4px 2px !important;
+            height: 28px !important;
+            min-height: 28px !important;
+            line-height: 20px !important;
+        }
+        .st-key-ess_input_card div[data-baseweb="input"] {
+            min-height: 28px !important;
         }
         /* Small icon-style controls row inside the card */
         .ess-card-icons .stCheckbox label p {
