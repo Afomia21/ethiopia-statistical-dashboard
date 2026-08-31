@@ -1129,7 +1129,7 @@ def render_chatbot():
         unsafe_allow_html=True,
     )
 
- chat_is_empty = len(st.session_state.messages) == 0
+    chat_is_empty = len(st.session_state.messages) == 0
     outer = st.container(key="ess_center_wrapper") if chat_is_empty else st.container()
 
     with outer:
