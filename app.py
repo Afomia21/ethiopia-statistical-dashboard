@@ -35,7 +35,7 @@ DB_DIR = Path("chroma_db")  # pre-built locally with local_rebuild.py, committed
 STATS_COLLECTION = "esps_stats"
 PDF_COLLECTION = "ess_pdf_docs"
 STATS_FILE = Path("data set") / "preprocessed" / "aggregate_stats.csv"
-MODEL = ""llama-3.3-70b-versatile"
+MODEL = "llama-3.3-70b-versatile"
 
 
 st.set_page_config(page_title="ESS Dashboard", layout="wide", initial_sidebar_state="collapsed")
