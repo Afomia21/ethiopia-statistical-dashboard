@@ -1087,31 +1087,6 @@ def render_chatbot():
             padding: 18px 22px 10px 22px;
             box-shadow: 0 6px 24px rgba(124,58,237,0.10);
         }
-        /* Made the input card smaller/more compact */
-        .st-key-ess_input_card {
-            max-width: 380px;
-            padding: 6px 10px 3px 10px;
-        }
-
-        /* Floating voice + language pill, bottom-right of the screen -
-           separate from the login sidebar, which is untouched. */
-        .st-key-ess_floating_controls {
-            position: fixed;
-            bottom: 24px;
-            right: 24px;
-            z-index: 999999;
-            background: white;
-            border-radius: 999px;
-            padding: 6px 16px;
-            box-shadow: 0 4px 14px rgba(0,0,0,0.15);
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        .st-key-ess_floating_controls .stCheckbox,
-        .st-key-ess_floating_controls .stPopover {
-            margin: 0 !important;
-        }
         /* Make the text input blend into the card - no visible border of its own,
            and small: shorter height, smaller font, tighter padding */
         .st-key-ess_input_card input[type="text"] {
