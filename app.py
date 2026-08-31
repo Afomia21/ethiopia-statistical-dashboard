@@ -656,8 +656,7 @@ def query_collection(collection, query: str, n_results: int = 8):
     results = collection.query(query_texts=[query], n_results=n_results, include=["documents", "metadatas"])
     return results.get("documents", [[]])[0], results.get("metadatas", [[]])[0]
 
-
-def build_prompt(query: str, documents: list, max_chars_per_doc: int = 800) -> str:
+def build_prompt(query: str, documents: list, max_chars_per_doc: int = 1000) -> str:
     # Truncate each retrieved chunk - Groq's free tier caps requests at 6000 tokens/minute,
     # and sending too many full-length chunks was blowing past that limit (causing 413 errors
     # that fell back to an unformatted raw dump instead of a real answer).
@@ -667,15 +666,19 @@ def build_prompt(query: str, documents: list, max_chars_per_doc: int = 800) -> s
         "You are the official ESS (Ethiopian Statistical Service) AI Assistant, answering questions "
         "using ONLY the context provided below - never invent numbers or facts not present in the context.\n\n"
         "Guidelines for your answer:\n"
-        "- If the question asks for ONE specific fact/number: answer in 1-2 short sentences, lead with "
-        "the number/fact directly, no preamble like 'According to the documents'.\n"
+        "- Give a thorough, well-explained answer (roughly 4-8 sentences, or a short bulleted "
+        "list with a sentence of explanation per point when the question covers multiple things).\n"
+        "- Lead with the direct fact/number/answer first, then add helpful context: what the "
+        "figure means, how it compares to related figures in the context, or any relevant detail "
+        "the context provides.\n"
         "- If the question asks about MULTIPLE things (e.g. 'list the reports', 'what does each dataset "
-        "cover', 'tell me about X and Y'): answer with a short bullet list, one line per item, still no "
-        "filler sentences before or after the list.\n"
-        "- Never pad the answer or repeat the same figure twice.\n"
-        "- If the exact figure requested isn't in the context but a closely related one is, say so in a "
-        "short clause, then give the closely related figure and what it actually covers.\n"
-        "- If truly nothing relevant is in the context, say so in one sentence.\n"
+        "cover', 'tell me about X and Y'): use a bullet list, one line per item, with a short "
+        "explanation on each line rather than just a bare fact.\n"
+        "- Don't repeat the same figure twice, and don't pad with empty filler sentences that add no "
+        "information - every sentence should add something useful.\n"
+        "- If the exact figure requested isn't in the context but a closely related one is, say so "
+        "clearly, then give the closely related figure and explain what it actually covers.\n"
+        "- If truly nothing relevant is in the context, say so in one or two sentences.\n"
         "- Do NOT include a 'Source:' line yourself - that is added separately.\n\n"
         f"Context:\n{context}\n\nQuestion: {query}"
     )
