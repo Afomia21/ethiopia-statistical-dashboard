@@ -35,7 +35,7 @@ DB_DIR = Path("chroma_db")  # pre-built locally with local_rebuild.py, committed
 STATS_COLLECTION = "esps_stats"
 PDF_COLLECTION = "ess_pdf_docs"
 STATS_FILE = Path("data set") / "preprocessed" / "aggregate_stats.csv"
-MODEL = "llama-3.3-70b-versatile"
+MODEL = "openai/gpt-oss-20b"
 
 
 st.set_page_config(page_title="ESS Dashboard", layout="wide", initial_sidebar_state="collapsed")
@@ -706,7 +706,8 @@ def ask_groq(client: Groq, query: str, documents: list) -> str:
         client,
         model=MODEL,
         messages=[{"role": "user", "content": prompt}],
-        max_tokens=300,
+        max_tokens=500,
+        reasoning_effort="low",
     )
     return response.choices[0].message.content.strip()
 
