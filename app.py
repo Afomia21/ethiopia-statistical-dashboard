@@ -1087,6 +1087,31 @@ def render_chatbot():
             padding: 18px 22px 10px 22px;
             box-shadow: 0 6px 24px rgba(124,58,237,0.10);
         }
+        /* Made the input card smaller/more compact */
+        .st-key-ess_input_card {
+            max-width: 480px;
+            padding: 12px 16px 4px 16px;
+        }
+
+        /* Floating voice + language pill, bottom-right of the screen -
+           separate from the login sidebar, which is untouched. */
+        .st-key-ess_floating_controls {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            z-index: 999999;
+            background: white;
+            border-radius: 999px;
+            padding: 6px 16px;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.15);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .st-key-ess_floating_controls .stCheckbox,
+        .st-key-ess_floating_controls .stPopover {
+            margin: 0 !important;
+        }
         /* Make the text input blend into the card - no visible border of its own */
         .st-key-ess_input_card input[type="text"] {
             border: none !important;
@@ -1104,7 +1129,7 @@ def render_chatbot():
         unsafe_allow_html=True,
     )
 
-    chat_is_empty = len(st.session_state.messages) == 0
+ chat_is_empty = len(st.session_state.messages) == 0
     outer = st.container(key="ess_center_wrapper") if chat_is_empty else st.container()
 
     with outer:
@@ -1115,20 +1140,20 @@ def render_chatbot():
                 label_visibility="collapsed",
                 key=f"chat_text_{st.session_state.chat_input_key}",
             )
-            icon_row = st.container()
-            icon_row.markdown('<div class="ess-card-icons">', unsafe_allow_html=True)
-            with icon_row:
-                c_amharic, c_mic, c_spacer, c_send = st.columns([1, 1, 4, 1.3])
-                with c_amharic:
-                    amharic_mode = st.checkbox("🇪🇹", value=False, help="Also answer in Amharic")
-                with c_mic:
-                    audio_value = None
-                    with st.popover("🎤"):
-                        st.caption("Record a question")
-                        audio_value = st.audio_input("Recorder", label_visibility="collapsed")
-                with c_send:
-                    send_clicked = st.button("Send ➤", use_container_width=True)
-            icon_row.markdown('</div>', unsafe_allow_html=True)
+            c_spacer, c_send = st.columns([5, 1])
+            with c_send:
+                send_clicked = st.button("➤", use_container_width=True)
+
+    # Floating voice + language pill, bottom-right of the screen
+    with st.container(key="ess_floating_controls"):
+        c_amharic, c_mic = st.columns([1, 1])
+        with c_amharic:
+            amharic_mode = st.checkbox("🇪🇹", value=False, help="Also answer in Amharic")
+        with c_mic:
+            audio_value = None
+            with st.popover("🎤"):
+                st.caption("Record a question")
+                audio_value = st.audio_input("Recorder", label_visibility="collapsed")
 
     voice_question = None
     if audio_value is not None and GROQ_API_KEY:
