@@ -84,7 +84,7 @@ st.markdown(
         margin-top: -2px;
     }
 
-    /* Thin Question Box Styling */
+    /* Thin Question Box */
     div[data-testid="stTextArea"] textarea {
         border: 2px solid #222222 !important;
         border-radius: 12px !important;
@@ -96,28 +96,31 @@ st.markdown(
         box-shadow: 0px 4px 12px rgba(0,0,0,0.05);
     }
 
-    /* Target the floating button container and lock it tightly to the bottom right */
-    div[data-testid="stHorizontalBlock"]:has(button[key="bottom_mic"]) {
+    /* Target the container key to lock it to the bottom-right corner */
+    div[element-id="floating-buttons"] {
         position: fixed !important;
         bottom: 20px !important;
         right: 20px !important;
         z-index: 999999 !important;
-        display: inline-flex !important;
+        width: auto !important;
+    }
+
+    /* Force columns inside the floating block to stay compact and side-by-side */
+    div[element-id="floating-buttons"] div[data-testid="stHorizontalBlock"] {
+        display: flex !important;
         flex-direction: row !important;
         gap: 6px !important;
         width: auto !important;
-        background: transparent !important;
     }
 
-    /* Disable Streamlit column flex spacing */
-    div[data-testid="stHorizontalBlock"]:has(button[key="bottom_mic"]) > div[data-testid="column"] {
+    div[element-id="floating-buttons"] div[data-testid="column"] {
         width: auto !important;
-        min-width: unset !important;
+        min-width: 0 !important;
         flex: 0 0 auto !important;
     }
 
-    /* Compact square buttons side-by-side */
-    div[data-testid="stHorizontalBlock"]:has(button[key="bottom_mic"]) button {
+    /* Compact square icon buttons */
+    div[element-id="floating-buttons"] button {
         border-radius: 10px !important;
         padding: 0px !important;
         height: 40px !important;
@@ -127,29 +130,13 @@ st.markdown(
         align-items: center !important;
         justify-content: center !important;
         background-color: #ffffff !important;
-        border: 1px solid #d1d5db !important;
-        box-shadow: 0px 2px 8px rgba(0, 0, 0, 0.08) !important;
-    }
-
-    /* Sidebar Login Card */
-    .ess-login-card {
-        background: white;
-        border-radius: 18px;
-        padding: 18px 16px 8px 16px;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.06);
-        margin-bottom: 12px;
-    }
-    .ess-login-title {
-        font-size: 18px;
-        font-weight: 700;
-        color: #7c3aed;
-        margin-bottom: 2px;
+        border: 1px solid #222222 !important;
+        box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.1) !important;
     }
     </style>
     """,
     unsafe_allow_html=True,
 )
-
 # --- Small embeddable widget mode -----------------------------------------
 WIDGET_MODE = st.query_params.get("widget") == "1"
 
