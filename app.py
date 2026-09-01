@@ -34,7 +34,7 @@ DB_DIR = Path("chroma_db")
 STATS_COLLECTION = "esps_stats"
 PDF_COLLECTION = "ess_pdf_docs"
 STATS_FILE = Path("data set") / "preprocessed" / "aggregate_stats.csv"
-MODEL = "openai/gpt-oss-20b"
+MODEL ="llama-3.1-8b-instant"
 
 
 st.set_page_config(page_title="ESS Dashboard", layout="wide", initial_sidebar_state="expanded")
@@ -497,6 +497,7 @@ def get_chroma_client():
     return PersistentClient(path=str(DB_DIR))
 
 
+@st.cache_resource(show_spinner=False)
 def get_pdf_collection():
     client = get_chroma_client()
     embed_fn = get_embed_fn()
