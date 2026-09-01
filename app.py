@@ -546,8 +546,7 @@ try:
 except Exception as e:
     DB_READY = False
     st.sidebar.warning(f"Database features unavailable: {e}")
-
-# --- Sidebar (Login + Chat History) ---
+   # --- Sidebar (Login + Chat History) ---
 if not WIDGET_MODE:
     with st.sidebar:
         st.markdown(
@@ -559,7 +558,6 @@ if not WIDGET_MODE:
             unsafe_allow_html=True,
         )
         
-        # Session State Initialization
         if "username" not in st.session_state:
             st.session_state.username = "guest"
 
@@ -572,7 +570,6 @@ if not WIDGET_MODE:
                 if ok:
                     st.session_state.username = username_input
                     st.success(msg)
-                    st.rerun()
                 else:
                     st.error(msg)
             else:
@@ -581,24 +578,30 @@ if not WIDGET_MODE:
         st.markdown("---")
         st.markdown("### 💬 Previous Questions")
 
-        # Load and display user history from database
+        # Load history from DB + active session
         current_user = st.session_state.get("username", "guest")
+        db_history = []
         if DB_READY and current_user:
             try:
-                history = load_chat_history(current_user)
-                if history:
-                    # Display history items in reverse order (newest first)
-                    for item in reversed(history):
-                        q_text, a_text, route, src_doc, src_page = item
-                        with st.expander(f"❓ {q_text[:35]}..."):
-                            st.write(f"**Q:** {q_text}")
-                            st.write(f"**A:** {a_text}")
-                else:
-                    st.caption("No previous questions found.")
-            except Exception as e:
-                st.caption("Unable to load chat history.")
+                db_history = load_chat_history(current_user)
+            except Exception:
+                pass
+
+        # Combine database history with current session entries
+        all_history = db_history + [
+            (q, a, "pdf", "", "") for q, a in st.session_state.get("chat_history", [])
+            if (q, a) not in [(item[0], item[1]) for item in db_history]
+        ]
+
+        if all_history:
+            for item in reversed(all_history):
+                q_text = item[0]
+                a_text = item[1]
+                with st.expander(f"❓ {q_text[:30]}..."):
+                    st.write(f"**Q:** {q_text}")
+                    st.write(f"**A:** {a_text}")
         else:
-            st.caption("Log in to save and view your personal history.")
+            st.caption("No previous questions found.")
 # --- Header Section ---
 if not WIDGET_MODE:
     st.markdown(
@@ -625,32 +628,47 @@ with center_col:
     user_query = st.chat_input("Ask ESS AI Assistant...")
 
   if user_query:
-    # Check cache first
-    cached_res = get_cached_answer(user_query)
-    if cached_res:
-        answer, route, src_doc, src_page = cached_res
-    else:
-        client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
-        pdf_col = get_pdf_collection()
-        docs = []
-        if pdf_col:
-            res = pdf_col.query(query_texts=[user_query], n_results=5)
-            docs = res.get("documents", [[]])[0]
+   # Initialize session state for UI history display
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
 
-        if client and docs:
-            answer = ask_groq(client, user_query, docs)
+# --- Question Box Section ---
+left_pad, center_col, right_pad = st.columns([1, 2, 1])
+
+with center_col:
+    user_query = st.chat_input("Ask ESS AI Assistant...")
+
+    if user_query:
+        # 1. Check cache first for instant response
+        cached_res = get_cached_answer(user_query) if DB_READY else None
+        
+        if cached_res:
+            answer, route, src_doc, src_page = cached_res
         else:
-            answer = "I couldn't locate specific information on that."
+            client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
+            pdf_col = get_pdf_collection()
+            docs = []
+            
+            if pdf_col:
+                res = pdf_col.query(query_texts=[user_query], n_results=5)
+                docs = res.get("documents", [[]])[0]
 
-        # Save to PostgreSQL database and query cache
-        current_user = st.session_state.get("username", "guest")
-        save_chat(current_user, user_query, answer, "pdf")
-        save_to_cache(user_query, answer, "pdf", "", "")
+            if client and docs:
+                answer = ask_groq(client, user_query, docs)
+            else:
+                answer = "I couldn't locate specific information on that."
 
-    st.markdown(f"**Answer:** {answer}")
-    
-    # Refresh app to update sidebar history
-    st.rerun()
+            # Save to Database & Cache
+            if DB_READY:
+                current_user = st.session_state.get("username", "guest")
+                save_chat(current_user, user_query, answer, "pdf")
+                save_to_cache(user_query, answer, "pdf", "", "")
+
+        # Append to active session history so it updates instantly without page refresh
+        st.session_state.chat_history.append((user_query, answer))
+        st.markdown(f"**Answer:** {answer}")
+
+        # DO NOT call st.rerun() here! Streamlit handles the refresh automatically.
 # --- Bottom Floating Buttons ---
 st.markdown(
     """
