@@ -547,37 +547,58 @@ except Exception as e:
     DB_READY = False
     st.sidebar.warning(f"Database features unavailable: {e}")
 
-# --- Sidebar Login preserved ---
+# --- Sidebar (Login + Chat History) ---
 if not WIDGET_MODE:
     with st.sidebar:
         st.markdown(
             """
             <div class="ess-login-card">
-                <div class="ess-login-title">🔐 Login</div>
+                <div class="ess-login-title">🔐 User Profile</div>
             </div>
             """,
             unsafe_allow_html=True,
         )
+        
+        # Session State Initialization
         if "username" not in st.session_state:
-            st.session_state.username = ""
-        if "history_loaded_for" not in st.session_state:
-            st.session_state.history_loaded_for = None
+            st.session_state.username = "guest"
 
-        username_input = st.text_input("👤 Enter your name", value=st.session_state.username)
+        username_input = st.text_input("👤 Enter your name", value=st.session_state.username if st.session_state.username != "guest" else "")
         password_input = st.text_input("🔑 Password", type="password")
-        st.caption("New username? Just pick a password - it creates your account automatically.")
-
-        if st.button("Login"):
+        
+        if st.button("Login / Register"):
             if username_input and password_input:
                 ok, msg = login_user(username_input, password_input)
                 if ok:
                     st.session_state.username = username_input
                     st.success(msg)
+                    st.rerun()
                 else:
                     st.error(msg)
             else:
-                st.warning("Please enter username and password.")
+                st.warning("Please enter both username and password.")
 
+        st.markdown("---")
+        st.markdown("### 💬 Previous Questions")
+
+        # Load and display user history from database
+        current_user = st.session_state.get("username", "guest")
+        if DB_READY and current_user:
+            try:
+                history = load_chat_history(current_user)
+                if history:
+                    # Display history items in reverse order (newest first)
+                    for item in reversed(history):
+                        q_text, a_text, route, src_doc, src_page = item
+                        with st.expander(f"❓ {q_text[:35]}..."):
+                            st.write(f"**Q:** {q_text}")
+                            st.write(f"**A:** {a_text}")
+                else:
+                    st.caption("No previous questions found.")
+            except Exception as e:
+                st.caption("Unable to load chat history.")
+        else:
+            st.caption("Log in to save and view your personal history.")
 # --- Header Section ---
 if not WIDGET_MODE:
     st.markdown(
@@ -603,33 +624,33 @@ with center_col:
     # Native chat input places the submit arrow icon directly inside the input box
     user_query = st.chat_input("Ask ESS AI Assistant...")
 
-    if user_query:
-        # Check cache first for instant responses
-        cached_res = get_cached_answer(user_query)
-        if cached_res:
-            answer, route, src_doc, src_page = cached_res
-            st.markdown(f"**Answer:** {answer}")
+  if user_query:
+    # Check cache first
+    cached_res = get_cached_answer(user_query)
+    if cached_res:
+        answer, route, src_doc, src_page = cached_res
+    else:
+        client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
+        pdf_col = get_pdf_collection()
+        docs = []
+        if pdf_col:
+            res = pdf_col.query(query_texts=[user_query], n_results=5)
+            docs = res.get("documents", [[]])[0]
+
+        if client and docs:
+            answer = ask_groq(client, user_query, docs)
         else:
-            client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
-            pdf_col = get_pdf_collection()
-            
-            # Retrieve top 5 matches to include both text and table chunks
-            docs = []
-            if pdf_col:
-                res = pdf_col.query(query_texts=[user_query], n_results=5)
-                docs = res.get("documents", [[]])[0]
+            answer = "I couldn't locate specific information on that."
 
-            if client and docs:
-                # Fast model response generation
-                answer = ask_groq(client, user_query, docs)
-            else:
-                answer = "I couldn't locate specific information on that in the available documents or tables."
+        # Save to PostgreSQL database and query cache
+        current_user = st.session_state.get("username", "guest")
+        save_chat(current_user, user_query, answer, "pdf")
+        save_to_cache(user_query, answer, "pdf", "", "")
 
-            st.markdown(f"**Answer:** {answer}")
-            
-            # Save to PostgreSQL and cache for instant future loads
-            save_chat(st.session_state.get("username", "guest"), user_query, answer, "pdf")
-            save_to_cache(user_query, answer, "pdf", "", "")
+    st.markdown(f"**Answer:** {answer}")
+    
+    # Refresh app to update sidebar history
+    st.rerun()
 # --- Bottom Floating Buttons ---
 st.markdown(
     """
