@@ -626,12 +626,14 @@ left_pad, center_col, right_pad = st.columns([1, 2, 1])
 with center_col:
     # Native chat input places the submit arrow icon directly inside the input box
     user_query = st.chat_input("Ask ESS AI Assistant...")
-
-  if user_query:
+if user_query:
    # Initialize session state for UI history display
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
+# Initialize session state for UI history display
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
 # --- Question Box Section ---
 left_pad, center_col, right_pad = st.columns([1, 2, 1])
 
@@ -664,9 +666,11 @@ with center_col:
                 save_chat(current_user, user_query, answer, "pdf")
                 save_to_cache(user_query, answer, "pdf", "", "")
 
-        # Append to active session history so it updates instantly
+        # Append to active session history so it updates instantly without page refresh
         st.session_state.chat_history.append((user_query, answer))
         st.markdown(f"**Answer:** {answer}")
+
+        # DO NOT call st.rerun() here! Streamlit handles the refresh automatically.
 
 # --- Bottom Floating Buttons ---
 st.markdown(
