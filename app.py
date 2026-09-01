@@ -664,11 +664,10 @@ with center_col:
                 save_chat(current_user, user_query, answer, "pdf")
                 save_to_cache(user_query, answer, "pdf", "", "")
 
-        # Append to active session history so it updates instantly without page refresh
+        # Append to active session history so it updates instantly
         st.session_state.chat_history.append((user_query, answer))
         st.markdown(f"**Answer:** {answer}")
 
-        # DO NOT call st.rerun() here! Streamlit handles the refresh automatically.
 # --- Bottom Floating Buttons ---
 st.markdown(
     """
