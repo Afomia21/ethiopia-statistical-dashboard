@@ -85,16 +85,17 @@ st.markdown(
     }
 
     /* Thin Question Box */
-    div[data-testid="stTextArea"] textarea {
-        border: 2px solid #222222 !important;
-        border-radius: 12px !important;
-        padding: 10px 14px !important;
-        background-color: #ffffff !important;
-        font-size: 14px !important;
-        height: 42px !important;
-        min-height: 42px !important;
-        box-shadow: 0px 4px 12px rgba(0,0,0,0.05);
-    }
+div[data-testid="stChatInput"] {
+    border-radius: 12px !important;
+    border: 2px solid #222222 !important;
+    background-color: #ffffff !important;
+    box-shadow: 0px 4px 12px rgba(0,0,0,0.05) !important;
+}
+
+div[data-testid="stChatInput"] textarea {
+    height: 42px !important;
+    font-size: 14px !important;
+}
 
     /* Floating container for bottom-right buttons */
     .floating-button-wrapper {
@@ -595,29 +596,40 @@ if not WIDGET_MODE:
 # --- Thin Centered Question Box ---
 left_pad, center_col, right_pad = st.columns([1, 2, 1])
 
+# --- Question Box Section ---
+left_pad, center_col, right_pad = st.columns([1, 2, 1])
+
 with center_col:
-    user_query = st.text_area(
-        "", 
-        placeholder="Ask ESS AI Assistant...", 
-        height=42, 
-        label_visibility="collapsed"
-    )
-    if st.button("Send Query", key="send_btn"):
-        if user_query:
+    # Native chat input places the submit arrow icon directly inside the input box
+    user_query = st.chat_input("Ask ESS AI Assistant...")
+
+    if user_query:
+        # Check cache first for instant responses
+        cached_res = get_cached_answer(user_query)
+        if cached_res:
+            answer, route, src_doc, src_page = cached_res
+            st.markdown(f"**Answer:** {answer}")
+        else:
             client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
             pdf_col = get_pdf_collection()
+            
+            # Retrieve top 5 matches to include both text and table chunks
             docs = []
             if pdf_col:
-                res = pdf_col.query(query_texts=[user_query], n_results=3)
+                res = pdf_col.query(query_texts=[user_query], n_results=5)
                 docs = res.get("documents", [[]])[0]
 
             if client and docs:
+                # Fast model response generation
                 answer = ask_groq(client, user_query, docs)
             else:
-                answer = "I couldn't locate specific information on that."
+                answer = "I couldn't locate specific information on that in the available documents or tables."
 
-            st.write(f"**Answer:** {answer}")
+            st.markdown(f"**Answer:** {answer}")
+            
+            # Save to PostgreSQL and cache for instant future loads
             save_chat(st.session_state.get("username", "guest"), user_query, answer, "pdf")
+            save_to_cache(user_query, answer, "pdf", "", "")
 # --- Bottom Floating Buttons ---
 st.markdown(
     """
