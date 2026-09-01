@@ -54,7 +54,7 @@ st.markdown(
         background: #f8f8fd;
     }
 
-    /* Cute bot header */
+    /* Header styling */
     .ess-bot-header {
         display: flex;
         align-items: center;
@@ -85,14 +85,6 @@ st.markdown(
     }
 
     /* Centered Small Question Box Container */
-    .chat-box-container {
-        display: flex;
-        justify-content: center;
-        margin-top: 80px;
-        margin-bottom: 30px;
-    }
-    
-    /* Styling text area to look like a compact card box */
     div[data-testid="stTextArea"] textarea {
         border: 2px solid #222222 !important;
         border-radius: 12px !important;
@@ -102,20 +94,18 @@ st.markdown(
         box-shadow: 0px 4px 12px rgba(0,0,0,0.05);
     }
 
-    /* Bottom Right Voice & Controls Placement */
-    .floating-voice-controls {
-        position: fixed;
-        bottom: 30px;
-        right: 30px;
-        z-index: 99999;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        background: white;
-        padding: 6px 10px;
-        border-radius: 12px;
-        box-shadow: 0px 4px 15px rgba(0, 0, 0, 0.1);
-        border: 1px solid #e2e8f0;
+    /* Fixed Floating Controls at Bottom-Right */
+    div[data-testid="stVerticalBlock"] > div:has(div.floating-voice-anchor) {
+        position: fixed !important;
+        bottom: 25px !important;
+        right: 25px !important;
+        z-index: 999999 !important;
+        background: #ffffff !important;
+        padding: 6px 14px !important;
+        border-radius: 12px !important;
+        border: 1px solid #d1d5db !important;
+        box-shadow: 0px 4px 12px rgba(0, 0, 0, 0.08) !important;
+        width: auto !important;
     }
 
     /* Sidebar Login Card */
@@ -599,7 +589,7 @@ if not WIDGET_MODE:
         unsafe_allow_html=True,
     )
 
-# --- Small Centered Question Box (Matching design image) ---
+# --- Small Centered Question Box ---
 left_pad, center_col, right_pad = st.columns([1, 2, 1])
 
 with center_col:
@@ -626,13 +616,13 @@ with center_col:
             st.write(f"**Answer:** {answer}")
             save_chat(st.session_state.get("username", "guest"), user_query, answer, "pdf")
 
-# --- Voice & Language Controls (Positioned at bottom-right) ---
-st.markdown('<div class="floating-voice-controls">', unsafe_allow_html=True)
-btn_col1, btn_col2, btn_col3 = st.columns([1, 1, 3])
-with btn_col1:
+# --- Voice & Amharic Floating Card (Bottom-Right) ---
+st.markdown('<div class="floating-voice-anchor"></div>', unsafe_allow_html=True)
+col_mic, col_amh, col_txt = st.columns([0.2, 0.2, 0.6])
+
+with col_mic:
     mic_pressed = st.button("🎙️", key="bottom_mic", help="Voice input")
-with btn_col2:
+with col_amh:
     amharic_pressed = st.button("አ", key="bottom_amharic", help="Amharic input")
-with btn_col3:
-    st.caption("Voice & Amharic")
-st.markdown('</div>', unsafe_allow_html=True)
+with col_txt:
+    st.markdown("<p style='margin: 8px 0 0 4px; font-size: 13px; font-weight: 600; color: #4b5563; white-space: nowrap;'>Voice & Amharic</p>", unsafe_allow_html=True)
