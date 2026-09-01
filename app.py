@@ -91,41 +91,44 @@ st.markdown(
         padding: 10px 14px !important;
         background-color: #ffffff !important;
         font-size: 14px !important;
-        height: 50px !important;
-        min-height: 50px !important;
+        height: 42px !important;
+        min-height: 42px !important;
         box-shadow: 0px 4px 12px rgba(0,0,0,0.05);
     }
 
-    /* Fixed Floating Controls Container at Bottom-Right */
+    /* Target the floating button container and lock it tightly to the bottom right */
     div[data-testid="stHorizontalBlock"]:has(button[key="bottom_mic"]) {
         position: fixed !important;
-        bottom: 25px !important;
-        right: 25px !important;
+        bottom: 20px !important;
+        right: 20px !important;
         z-index: 999999 !important;
-        background: #ffffff !important;
-        padding: 6px 10px !important;
-        border-radius: 12px !important;
-        border: 1px solid #d1d5db !important;
-        box-shadow: 0px 4px 12px rgba(0, 0, 0, 0.08) !important;
-        display: flex !important;
+        display: inline-flex !important;
+        flex-direction: row !important;
         gap: 6px !important;
         width: auto !important;
+        background: transparent !important;
     }
 
-    /* Target small square icon buttons */
-    div[data-testid="stHorizontalBlock"]:has(button[key="bottom_mic"]) div[data-testid="column"] {
+    /* Disable Streamlit column flex spacing */
+    div[data-testid="stHorizontalBlock"]:has(button[key="bottom_mic"]) > div[data-testid="column"] {
         width: auto !important;
-        flex: none !important;
+        min-width: unset !important;
+        flex: 0 0 auto !important;
     }
 
+    /* Compact square buttons side-by-side */
     div[data-testid="stHorizontalBlock"]:has(button[key="bottom_mic"]) button {
-        border-radius: 8px !important;
-        padding: 4px 10px !important;
-        height: 38px !important;
-        width: 38px !important;
+        border-radius: 10px !important;
+        padding: 0px !important;
+        height: 40px !important;
+        width: 40px !important;
+        min-width: 40px !important;
         display: flex !important;
         align-items: center !important;
         justify-content: center !important;
+        background-color: #ffffff !important;
+        border: 1px solid #d1d5db !important;
+        box-shadow: 0px 2px 8px rgba(0, 0, 0, 0.08) !important;
     }
 
     /* Sidebar Login Card */
@@ -616,7 +619,7 @@ with center_col:
     user_query = st.text_area(
         "", 
         placeholder="Ask ESS AI Assistant...", 
-        height=50, 
+        height=42, 
         label_visibility="collapsed"
     )
     if st.button("Send Query", key="send_btn"):
@@ -636,8 +639,8 @@ with center_col:
             st.write(f"**Answer:** {answer}")
             save_chat(st.session_state.get("username", "guest"), user_query, answer, "pdf")
 
-# --- Side-by-Side Floating Buttons at Bottom Right (No Extra Text) ---
-col_mic, col_amh = st.columns([1, 1])
+# --- Closely Placed Floating Buttons at Bottom Right (No Extra Text) ---
+col_mic, col_amh = st.columns(2)
 with col_mic:
     mic_pressed = st.button("🎙️", key="bottom_mic", help="Voice input")
 with col_amh:
