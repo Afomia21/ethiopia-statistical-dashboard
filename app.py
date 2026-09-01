@@ -18,8 +18,7 @@ load_dotenv()
 
 def get_secret(key: str, default=None):
     """Reads a credential from a local .env file first (for local development),
-    then falls back to Streamlit Cloud's secrets manager (Settings -> Secrets),
-    since .env files are never deployed to Streamlit Cloud."""
+    then falls back to Streamlit Cloud's secrets manager (Settings -> Secrets)."""
     value = os.getenv(key)
     if value:
         return value
@@ -31,7 +30,7 @@ def get_secret(key: str, default=None):
 
 GROQ_API_KEY = get_secret("GROQ_API_KEY")
 
-DB_DIR = Path("chroma_db")  # pre-built locally with local_rebuild.py, committed to the repo at the root - read-only at runtime
+DB_DIR = Path("chroma_db")
 STATS_COLLECTION = "esps_stats"
 PDF_COLLECTION = "ess_pdf_docs"
 STATS_FILE = Path("data set") / "preprocessed" / "aggregate_stats.csv"
@@ -40,7 +39,7 @@ MODEL = "openai/gpt-oss-20b"
 
 st.set_page_config(page_title="ESS Dashboard", layout="wide", initial_sidebar_state="expanded")
 
-# --- Custom Styling for Image Layout ---
+# --- Custom Styling for Image Layout & Design ---
 st.markdown(
     """
     <style>
@@ -84,18 +83,18 @@ st.markdown(
         margin-top: -2px;
     }
 
-    /* Thin Question Box */
-div[data-testid="stChatInput"] {
-    border-radius: 12px !important;
-    border: 2px solid #222222 !important;
-    background-color: #ffffff !important;
-    box-shadow: 0px 4px 12px rgba(0,0,0,0.05) !important;
-}
+    /* Thin Question Box (Streamlit Native Chat Input) */
+    div[data-testid="stChatInput"] {
+        border-radius: 12px !important;
+        border: 2px solid #222222 !important;
+        background-color: #ffffff !important;
+        box-shadow: 0px 4px 12px rgba(0,0,0,0.05) !important;
+    }
 
-div[data-testid="stChatInput"] textarea {
-    height: 42px !important;
-    font-size: 14px !important;
-}
+    div[data-testid="stChatInput"] textarea {
+        height: 42px !important;
+        font-size: 14px !important;
+    }
 
     /* Floating container for bottom-right buttons */
     .floating-button-wrapper {
@@ -127,10 +126,26 @@ div[data-testid="stChatInput"] textarea {
     .custom-icon-btn:hover {
         background-color: #f0f0f0;
     }
+
+    /* Sidebar Login Card */
+    .ess-login-card {
+        background: white;
+        border-radius: 18px;
+        padding: 18px 16px 8px 16px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+        margin-bottom: 12px;
+    }
+    .ess-login-title {
+        font-size: 18px;
+        font-weight: 700;
+        color: #7c3aed;
+        margin-bottom: 2px;
+    }
     </style>
     """,
     unsafe_allow_html=True,
 )
+
 # --- Small embeddable widget mode -----------------------------------------
 WIDGET_MODE = st.query_params.get("widget") == "1"
 
@@ -546,7 +561,8 @@ try:
 except Exception as e:
     DB_READY = False
     st.sidebar.warning(f"Database features unavailable: {e}")
-   # --- Sidebar (Login + Chat History) ---
+
+# --- Sidebar (Login & History) ---
 if not WIDGET_MODE:
     with st.sidebar:
         st.markdown(
@@ -557,13 +573,12 @@ if not WIDGET_MODE:
             """,
             unsafe_allow_html=True,
         )
-        
         if "username" not in st.session_state:
             st.session_state.username = "guest"
 
         username_input = st.text_input("👤 Enter your name", value=st.session_state.username if st.session_state.username != "guest" else "")
         password_input = st.text_input("🔑 Password", type="password")
-        
+
         if st.button("Login / Register"):
             if username_input and password_input:
                 ok, msg = login_user(username_input, password_input)
@@ -578,7 +593,6 @@ if not WIDGET_MODE:
         st.markdown("---")
         st.markdown("### 💬 Previous Questions")
 
-        # Load history from DB + active session
         current_user = st.session_state.get("username", "guest")
         db_history = []
         if DB_READY and current_user:
@@ -587,7 +601,6 @@ if not WIDGET_MODE:
             except Exception:
                 pass
 
-        # Combine database history with current session entries
         all_history = db_history + [
             (q, a, "pdf", "", "") for q, a in st.session_state.get("chat_history", [])
             if (q, a) not in [(item[0], item[1]) for item in db_history]
@@ -602,6 +615,7 @@ if not WIDGET_MODE:
                     st.write(f"**A:** {a_text}")
         else:
             st.caption("No previous questions found.")
+
 # --- Header Section ---
 if not WIDGET_MODE:
     st.markdown(
@@ -617,40 +631,25 @@ if not WIDGET_MODE:
         unsafe_allow_html=True,
     )
 
-# --- Thin Centered Question Box ---
-left_pad, center_col, right_pad = st.columns([1, 2, 1])
-
-# --- Question Box Section ---
-left_pad, center_col, right_pad = st.columns([1, 2, 1])
-
-with center_col:
-    # Native chat input places the submit arrow icon directly inside the input box
-    user_query = st.chat_input("Ask ESS AI Assistant...")
-if user_query:
-   # Initialize session state for UI history display
+# --- Question Box & Results Section ---
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
-# Initialize session state for UI history display
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
-# --- Question Box Section ---
 left_pad, center_col, right_pad = st.columns([1, 2, 1])
 
 with center_col:
     user_query = st.chat_input("Ask ESS AI Assistant...")
 
     if user_query:
-        # 1. Check cache first for instant response
         cached_res = get_cached_answer(user_query) if DB_READY else None
-        
+
         if cached_res:
             answer, route, src_doc, src_page = cached_res
         else:
             client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
             pdf_col = get_pdf_collection()
             docs = []
-            
+
             if pdf_col:
                 res = pdf_col.query(query_texts=[user_query], n_results=5)
                 docs = res.get("documents", [[]])[0]
@@ -658,21 +657,17 @@ with center_col:
             if client and docs:
                 answer = ask_groq(client, user_query, docs)
             else:
-                answer = "I couldn't locate specific information on that."
+                answer = "I couldn't locate specific information on that in the documents or tables."
 
-            # Save to Database & Cache
             if DB_READY:
                 current_user = st.session_state.get("username", "guest")
                 save_chat(current_user, user_query, answer, "pdf")
                 save_to_cache(user_query, answer, "pdf", "", "")
 
-        # Append to active session history so it updates instantly without page refresh
         st.session_state.chat_history.append((user_query, answer))
         st.markdown(f"**Answer:** {answer}")
 
-        # DO NOT call st.rerun() here! Streamlit handles the refresh automatically.
-
-# --- Bottom Floating Buttons ---
+# --- Side-by-side Bottom Floating Buttons ---
 st.markdown(
     """
     <div class="floating-button-wrapper">
