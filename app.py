@@ -626,9 +626,10 @@ with center_col:
             st.write(f"**Answer:** {answer}")
             save_chat(st.session_state.get("username", "guest"), user_query, answer, "pdf")
 
-# --- Closely Placed Floating Buttons at Bottom Right (No Extra Text) ---
-col_mic, col_amh = st.columns(2)
-with col_mic:
-    mic_pressed = st.button("🎙️", key="bottom_mic", help="Voice input")
-with col_amh:
-    amharic_pressed = st.button("አ", key="bottom_amharic", help="Amharic input")
+# --- Bottom Floating Buttons ---
+with st.container(key="floating-buttons"):
+    col_mic, col_amh = st.columns(2)
+    with col_mic:
+        mic_pressed = st.button("🎙️", key="bottom_mic", help="Voice input")
+    with col_amh:
+        amharic_pressed = st.button("አ", key="bottom_amharic", help="Amharic input")
