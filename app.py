@@ -84,28 +84,48 @@ st.markdown(
         margin-top: -2px;
     }
 
-    /* Centered Small Question Box Container */
+    /* Thin Question Box Styling */
     div[data-testid="stTextArea"] textarea {
         border: 2px solid #222222 !important;
         border-radius: 12px !important;
-        padding: 15px !important;
+        padding: 10px 14px !important;
         background-color: #ffffff !important;
         font-size: 14px !important;
+        height: 50px !important;
+        min-height: 50px !important;
         box-shadow: 0px 4px 12px rgba(0,0,0,0.05);
     }
 
-    /* Fixed Floating Controls at Bottom-Right */
-    div[data-testid="stVerticalBlock"] > div:has(div.floating-voice-anchor) {
+    /* Fixed Floating Controls Container at Bottom-Right */
+    div[data-testid="stHorizontalBlock"]:has(button[key="bottom_mic"]) {
         position: fixed !important;
         bottom: 25px !important;
         right: 25px !important;
         z-index: 999999 !important;
         background: #ffffff !important;
-        padding: 6px 14px !important;
+        padding: 6px 10px !important;
         border-radius: 12px !important;
         border: 1px solid #d1d5db !important;
         box-shadow: 0px 4px 12px rgba(0, 0, 0, 0.08) !important;
+        display: flex !important;
+        gap: 6px !important;
         width: auto !important;
+    }
+
+    /* Target small square icon buttons */
+    div[data-testid="stHorizontalBlock"]:has(button[key="bottom_mic"]) div[data-testid="column"] {
+        width: auto !important;
+        flex: none !important;
+    }
+
+    div[data-testid="stHorizontalBlock"]:has(button[key="bottom_mic"]) button {
+        border-radius: 8px !important;
+        padding: 4px 10px !important;
+        height: 38px !important;
+        width: 38px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
     }
 
     /* Sidebar Login Card */
@@ -543,7 +563,7 @@ except Exception as e:
     DB_READY = False
     st.sidebar.warning(f"Database features unavailable: {e}")
 
-# --- Sidebar Login preserved as originally requested ---
+# --- Sidebar Login preserved ---
 if not WIDGET_MODE:
     with st.sidebar:
         st.markdown(
@@ -589,14 +609,14 @@ if not WIDGET_MODE:
         unsafe_allow_html=True,
     )
 
-# --- Small Centered Question Box ---
+# --- Thin Centered Question Box ---
 left_pad, center_col, right_pad = st.columns([1, 2, 1])
 
 with center_col:
     user_query = st.text_area(
         "", 
         placeholder="Ask ESS AI Assistant...", 
-        height=100, 
+        height=50, 
         label_visibility="collapsed"
     )
     if st.button("Send Query", key="send_btn"):
@@ -616,13 +636,9 @@ with center_col:
             st.write(f"**Answer:** {answer}")
             save_chat(st.session_state.get("username", "guest"), user_query, answer, "pdf")
 
-# --- Voice & Amharic Floating Card (Bottom-Right) ---
-st.markdown('<div class="floating-voice-anchor"></div>', unsafe_allow_html=True)
-col_mic, col_amh, col_txt = st.columns([0.2, 0.2, 0.6])
-
+# --- Side-by-Side Floating Buttons at Bottom Right (No Extra Text) ---
+col_mic, col_amh = st.columns([1, 1])
 with col_mic:
     mic_pressed = st.button("🎙️", key="bottom_mic", help="Voice input")
 with col_amh:
     amharic_pressed = st.button("አ", key="bottom_amharic", help="Amharic input")
-with col_txt:
-    st.markdown("<p style='margin: 8px 0 0 4px; font-size: 13px; font-weight: 600; color: #4b5563; white-space: nowrap;'>Voice & Amharic</p>", unsafe_allow_html=True)
