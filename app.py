@@ -96,42 +96,35 @@ st.markdown(
         box-shadow: 0px 4px 12px rgba(0,0,0,0.05);
     }
 
-    /* Target the container key to lock it to the bottom-right corner */
-    div[element-id="floating-buttons"] {
-        position: fixed !important;
-        bottom: 20px !important;
-        right: 20px !important;
-        z-index: 999999 !important;
-        width: auto !important;
+    /* Floating container for bottom-right buttons */
+    .floating-button-wrapper {
+        position: fixed;
+        bottom: 25px;
+        right: 25px;
+        z-index: 999999;
+        display: flex;
+        flex-direction: row;
+        gap: 8px;
     }
 
-    /* Force columns inside the floating block to stay compact and side-by-side */
-    div[element-id="floating-buttons"] div[data-testid="stHorizontalBlock"] {
-        display: flex !important;
-        flex-direction: row !important;
-        gap: 6px !important;
-        width: auto !important;
+    .custom-icon-btn {
+        width: 42px;
+        height: 42px;
+        border-radius: 10px;
+        border: 1px solid #222222;
+        background-color: #ffffff;
+        box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.1);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 18px;
+        cursor: pointer;
+        text-decoration: none;
+        color: #000000;
     }
 
-    div[element-id="floating-buttons"] div[data-testid="column"] {
-        width: auto !important;
-        min-width: 0 !important;
-        flex: 0 0 auto !important;
-    }
-
-    /* Compact square icon buttons */
-    div[element-id="floating-buttons"] button {
-        border-radius: 10px !important;
-        padding: 0px !important;
-        height: 40px !important;
-        width: 40px !important;
-        min-width: 40px !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        background-color: #ffffff !important;
-        border: 1px solid #222222 !important;
-        box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.1) !important;
+    .custom-icon-btn:hover {
+        background-color: #f0f0f0;
     }
     </style>
     """,
@@ -625,11 +618,13 @@ with center_col:
 
             st.write(f"**Answer:** {answer}")
             save_chat(st.session_state.get("username", "guest"), user_query, answer, "pdf")
-
 # --- Bottom Floating Buttons ---
-with st.container(key="floating-buttons"):
-    col_mic, col_amh = st.columns(2)
-    with col_mic:
-        mic_pressed = st.button("🎙️", key="bottom_mic", help="Voice input")
-    with col_amh:
-        amharic_pressed = st.button("አ", key="bottom_amharic", help="Amharic input")
+st.markdown(
+    """
+    <div class="floating-button-wrapper">
+        <button class="custom-icon-btn" onclick="alert('Mic clicked')">🎙️</button>
+        <button class="custom-icon-btn" onclick="alert('Amharic clicked')">አ</button>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
