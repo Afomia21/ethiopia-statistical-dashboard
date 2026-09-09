@@ -18,9 +18,6 @@ FastAPI Backend (api.py): Cross-origin REST API (/ask) for web widget integratio
 Terminal CLI (chatbot.py): Command-line interface for local debugging.
 
 Multilingual Support: Powered by paraphrase-multilingual-MiniLM-L12-v2 embeddings and Gemini 2.5 LLM generation.
-
-📁 Repository Structure
-Plaintext
 ethiopia-statistical-dashboard/
 │
 ├── app.py                      # Main Streamlit dashboard interface
@@ -43,7 +40,6 @@ ethiopia-statistical-dashboard/
 ├── chroma_db/                  # Production ChromaDB persistent directory
 ├── requirements.txt            # Python dependencies
 └── README.md                   # Project documentation
-⚙️ Architecture & Data Pipeline
 [Raw ESPS CSVs] ---> build_aggregate_stats.py ---> [aggregate_stats.csv] ──┐
                                                                           ├──> local_rebuild.py ---> [chroma_db/]
 [PDF Reports]   ----------------------------------------------------------┘                              │
