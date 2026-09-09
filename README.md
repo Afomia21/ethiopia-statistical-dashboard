@@ -19,6 +19,10 @@ Terminal CLI (chatbot.py): Command-line interface for local debugging.
 
 Multilingual Support: Powered by paraphrase-multilingual-MiniLM-L12-v2 embeddings and Gemini 2.5 LLM generation.
 ethiopia-statistical-dashboard/
+### 📁 Repository Structure
+
+```text
+ethiopia-statistical-dashboard/
 │
 ├── app.py                      # Main Streamlit dashboard interface
 ├── core.py                     # Primary RAG search routing and LLM execution backend
