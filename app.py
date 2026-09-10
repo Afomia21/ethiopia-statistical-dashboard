@@ -9,7 +9,7 @@ from chromadb.utils import embedding_functions
 from groq import Groq
 
 # ==============================================================================
-# 1. INITIAL CONFIGURATION & CUSTOM CSS FOR FLOATING BUTTONS
+# 1. PAGE CONFIG & FIXED FLOATING BUTTONS CSS
 # ==============================================================================
 st.set_page_config(
     page_title="ESS AI Buddy",
@@ -18,15 +18,15 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS to pin the Mic and Amharic buttons cleanly to the bottom-left corner
+# Custom CSS for fixed bottom-left floating buttons
 st.markdown(
     """
     <style>
     .floating-button-wrapper {
         position: fixed;
-        bottom: 20px;
-        left: 20px;
-        z-index: 99999;
+        bottom: 25px;
+        left: 25px;
+        z-index: 999999;
         display: flex;
         gap: 10px;
     }
@@ -37,7 +37,7 @@ st.markdown(
         padding: 8px 14px;
         font-size: 16px;
         cursor: pointer;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        box-shadow: 0 2px 5px rgba(0,0,0,0.15);
         transition: all 0.2s ease-in-out;
     }
     .custom-icon-btn:hover {
@@ -50,15 +50,11 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# Retrieve keys from Streamlit Cloud Secrets or local environment
+# Environment setup
 GROQ_API_KEY = st.secrets.get("GROQ_API_KEY") or os.getenv("GROQ_API_KEY")
 WIDGET_MODE = st.query_params.get("embed", "false").lower() == "true"
-
-# Define database directory paths
 DB_DIR = Path("chroma_db")
 COLLECTION_NAME = "ess_pdf_docs"
-
-# Global flags
 DB_READY = False
 
 # ==============================================================================
@@ -127,59 +123,48 @@ def save_to_cache(query: str, answer: str, route: str, src_doc: str, src_page: s
         st.session_state.query_cache = {}
     st.session_state.query_cache[query] = (answer, route, src_doc, src_page)
 
+def process_and_index_pdf(uploaded_file, collection):
+    """Processes dynamic PDF uploads directly from chat_input."""
+    session_key = f"uploaded_{uploaded_file.name}"
+    if session_key not in st.session_state:
+        with st.spinner(f"Ingesting uploaded document '{uploaded_file.name}'..."):
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
+                tmp_file.write(uploaded_file.getvalue())
+                tmp_path = tmp_file.name
+
+            doc = fitz.open(tmp_path)
+            chunks, metadatas, ids = [], [], []
+
+            for page_num in range(len(doc)):
+                text = doc[page_num].get_text("text").strip()
+                if text:
+                    chunks.append(text)
+                    metadatas.append({"source": uploaded_file.name, "page": page_num + 1})
+                    ids.append(f"upload_{uploaded_file.name}_p{page_num + 1}")
+
+            doc.close()
+            os.remove(tmp_path)
+
+            if chunks and collection:
+                collection.add(documents=chunks, metadatas=metadatas, ids=ids)
+                st.session_state[session_key] = True
+                st.toast(f"✅ Indexed '{uploaded_file.name}' successfully!")
+
 # Initialize ChromaDB connection
 pdf_collection = get_pdf_collection()
 
 # ==============================================================================
-# 3. SIDEBAR: PDF FILE UPLOADER & HISTORY
+# 3. SIDEBAR: LOGIN SECTION & CHAT HISTORY ONLY
 # ==============================================================================
 with st.sidebar:
-    st.subheader("📄 Document Repository")
-    uploaded_pdfs = st.file_uploader(
-        "Upload new PDF reports",
-        type=["pdf"],
-        accept_multiple_files=True,
-        key="pdf_uploader"
-    )
+    st.subheader("👤 User Authentication")
+    if "username" not in st.session_state:
+        st.session_state.username = ""
 
-    if uploaded_pdfs:
-        if pdf_collection is not None:
-            for uploaded_pdf in uploaded_pdfs:
-                session_key = f"uploaded_{uploaded_pdf.name}"
-                if session_key not in st.session_state:
-                    with st.spinner(f"Ingesting {uploaded_pdf.name}..."):
-                        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
-                            tmp_file.write(uploaded_pdf.getvalue())
-                            tmp_path = tmp_file.name
-
-                        doc = fitz.open(tmp_path)
-                        chunks = []
-                        metadatas = []
-                        ids = []
-
-                        for page_num in range(len(doc)):
-                            text = doc[page_num].get_text("text").strip()
-                            if text:
-                                chunks.append(text)
-                                metadatas.append({
-                                    "source": uploaded_pdf.name,
-                                    "page": page_num + 1
-                                })
-                                ids.append(f"upload_{uploaded_pdf.name}_p{page_num + 1}")
-
-                        doc.close()
-                        os.remove(tmp_path)
-
-                        if chunks:
-                            pdf_collection.add(
-                                documents=chunks,
-                                metadatas=metadatas,
-                                ids=ids
-                            )
-                            st.session_state[session_key] = True
-                            st.success(f"✅ Indexed '{uploaded_pdf.name}'!")
-        else:
-            st.error("ChromaDB vector collection is unavailable.")
+    user_input = st.text_input("Username", value=st.session_state.username)
+    if st.button("Set User"):
+        st.session_state.username = user_input.strip() or "guest"
+        st.success(f"Logged in as: {st.session_state.username}")
 
     st.markdown("---")
     st.subheader("📜 Chat History")
@@ -207,7 +192,7 @@ with st.sidebar:
         st.caption("No previous questions found.")
 
 # ==============================================================================
-# 4. MAIN INTERFACE & CHAT CONSOLE
+# 4. HEADER SECTION & CHAT BAR WITH PLUS SIGN (+) UPLOADER
 # ==============================================================================
 if not WIDGET_MODE:
     st.markdown(
@@ -229,16 +214,23 @@ if "chat_history" not in st.session_state:
 left_pad, center_col, right_pad = st.columns([1, 2, 1])
 
 with center_col:
-    # Native chat input bar with built-in attachment upload icon
+    # Enabled attachment '+' button directly inside chat input bar
     chat_input_response = st.chat_input("Ask ESS AI Assistant...", accept_file=True)
 
     if chat_input_response:
+        # Separate prompt text from files attached via the '+' button
         if isinstance(chat_input_response, str):
             user_query = chat_input_response
             uploaded_files = []
         else:
             user_query = getattr(chat_input_response, "text", "")
             uploaded_files = getattr(chat_input_response, "files", [])
+
+        # Process any uploaded PDFs attached via the plus sign (+)
+        if uploaded_files and pdf_collection:
+            for file_obj in uploaded_files:
+                if file_obj.name.lower().endswith(".pdf"):
+                    process_and_index_pdf(file_obj, pdf_collection)
 
         if user_query:
             cached_res = get_cached_answer(user_query) if DB_READY else None
@@ -256,7 +248,7 @@ with center_col:
                 if client and docs:
                     answer = ask_groq(client, user_query, docs)
                 elif not GROQ_API_KEY:
-                    answer = "Error: GROQ_API_KEY is not configured in secrets."
+                    answer = "Error: GROQ_API_KEY is missing."
                 else:
                     answer = "I couldn't locate specific information on that in the documents or tables."
 
@@ -269,7 +261,7 @@ with center_col:
             st.markdown(f"**Answer:** {answer}")
 
 # ==============================================================================
-# 5. FIXED BOTTOM-LEFT FLOATING BUTTONS
+# 5. FLOATING BUTTONS PINNED TO BOTTOM LEFT (🎙 & አ)
 # ==============================================================================
 st.markdown(
     """
