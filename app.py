@@ -9,46 +9,13 @@ from chromadb.utils import embedding_functions
 from groq import Groq
 
 # ==============================================================================
-# 1. PAGE CONFIG & FIXED BOTTOM-RIGHT FLOATING BUTTONS
+# 1. PAGE CONFIG
 # ==============================================================================
 st.set_page_config(
     page_title="ESS AI Buddy",
     page_icon="🤖",
     layout="wide",
     initial_sidebar_state="expanded"
-)
-
-# Custom CSS targeting the container holding the buttons to pin it strictly to bottom-right
-st.markdown(
-    """
-    <style>
-    div[data-testid="stHorizontalBlock"]:has(button[key="voice_button_main"]) {
-        position: fixed !important;
-        bottom: 25px !important;
-        right: 25px !important;
-        z-index: 999999 !important;
-        width: auto !important;
-        background: transparent !important;
-        display: flex !important;
-        flex-direction: row !important;
-        gap: 8px !important;
-    }
-    div[data-testid="stHorizontalBlock"]:has(button[key="voice_button_main"]) .stButton > button {
-        background-color: #ffffff !important;
-        border: 1px solid #d0d7de !important;
-        border-radius: 8px !important;
-        padding: 8px 14px !important;
-        font-size: 18px !important;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.15) !important;
-        transition: all 0.2s ease-in-out !important;
-    }
-    div[data-testid="stHorizontalBlock"]:has(button[key="voice_button_main"]) .stButton > button:hover {
-        background-color: #f3f4f6 !important;
-        border-color: #000000 !important;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
 )
 
 # Environment setup
@@ -60,9 +27,6 @@ DB_READY = False
 
 if "amharic_mode" not in st.session_state:
     st.session_state.amharic_mode = False
-
-if "start_speech" not in st.session_state:
-    st.session_state.start_speech = False
 
 # ==============================================================================
 # 2. CHROMADB & HELPER FUNCTIONS
@@ -237,90 +201,115 @@ if not WIDGET_MODE:
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
-left_pad, center_col, right_pad = st.columns([1, 2, 1])
+placeholder_text = "በአማርኛ ይጠይቁ... (Ask in Amharic...)" if st.session_state.amharic_mode else "Ask ESS AI Assistant..."
+chat_input_response = st.chat_input(placeholder_text, accept_file=True)
 
-with center_col:
-    placeholder_text = "በአማርኛ ይጠይቁ... (Ask in Amharic...)" if st.session_state.amharic_mode else "Ask ESS AI Assistant..."
-    chat_input_response = st.chat_input(placeholder_text, accept_file=True)
+if chat_input_response:
+    if isinstance(chat_input_response, str):
+        user_query = chat_input_response
+        uploaded_files = []
+    else:
+        user_query = getattr(chat_input_response, "text", "")
+        uploaded_files = getattr(chat_input_response, "files", [])
 
-    if chat_input_response:
-        if isinstance(chat_input_response, str):
-            user_query = chat_input_response
-            uploaded_files = []
+    if uploaded_files and pdf_collection:
+        for file_obj in uploaded_files:
+            if file_obj.name.lower().endswith(".pdf"):
+                process_and_index_pdf(file_obj, pdf_collection)
+
+    if user_query:
+        cached_res = get_cached_answer(user_query) if DB_READY else None
+
+        if cached_res:
+            answer, route, src_doc, src_page = cached_res
         else:
-            user_query = getattr(chat_input_response, "text", "")
-            uploaded_files = getattr(chat_input_response, "files", [])
+            client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
+            docs = []
 
-        if uploaded_files and pdf_collection:
-            for file_obj in uploaded_files:
-                if file_obj.name.lower().endswith(".pdf"):
-                    process_and_index_pdf(file_obj, pdf_collection)
+            if pdf_collection:
+                res = pdf_collection.query(query_texts=[user_query], n_results=5)
+                docs = res.get("documents", [[]])[0]
 
-        if user_query:
-            cached_res = get_cached_answer(user_query) if DB_READY else None
-
-            if cached_res:
-                answer, route, src_doc, src_page = cached_res
+            if client and docs:
+                answer = ask_groq(client, user_query, docs)
+            elif not GROQ_API_KEY:
+                answer = "Error: GROQ_API_KEY is missing."
             else:
-                client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
-                docs = []
+                answer = "I couldn't locate specific information on that in the documents or tables."
 
-                if pdf_collection:
-                    res = pdf_collection.query(query_texts=[user_query], n_results=5)
-                    docs = res.get("documents", [[]])[0]
+            if DB_READY:
+                current_user = st.session_state.get("username", "guest")
+                save_chat(current_user, user_query, answer, "pdf")
+                save_to_cache(user_query, answer, "pdf", "", "")
 
-                if client and docs:
-                    answer = ask_groq(client, user_query, docs)
-                elif not GROQ_API_KEY:
-                    answer = "Error: GROQ_API_KEY is missing."
-                else:
-                    answer = "I couldn't locate specific information on that in the documents or tables."
-
-                if DB_READY:
-                    current_user = st.session_state.get("username", "guest")
-                    save_chat(current_user, user_query, answer, "pdf")
-                    save_to_cache(user_query, answer, "pdf", "", "")
-
-            st.session_state.chat_history.append((user_query, answer))
-            st.markdown(f"**Answer:** {answer}")
+        st.session_state.chat_history.append((user_query, answer))
+        st.markdown(f"**Answer:** {answer}")
 
 # ==============================================================================
-# 5. WORKING FLOATING BUTTONS PINNED AT BOTTOM RIGHT
+# 5. FIXED BOTTOM-RIGHT FLOATING BUTTONS & WORKING SPEECH-TO-TEXT
 # ==============================================================================
-float_col1, float_col2 = st.columns([1, 1])
+st.components.v1.html(
+    """
+    <script>
+    (function() {
+        var parentDoc = window.parent.document;
+        var existingWrapper = parentDoc.getElementById("ess-floating-wrapper-root");
+        if (existingWrapper) {
+            existingWrapper.remove();
+        }
 
-with float_col1:
-    if st.button("🎙", key="voice_button_main"):
-        st.session_state.start_speech = True
+        var wrapper = parentDoc.createElement("div");
+        wrapper.id = "ess-floating-wrapper-root";
+        wrapper.style.position = "fixed";
+        wrapper.style.bottom = "25px";
+        wrapper.style.right = "25px";
+        wrapper.style.zIndex = "999999";
+        wrapper.style.display = "flex";
+        wrapper.style.gap = "8px";
 
-with float_col2:
-    if st.button("አ", key="amharic_button_main"):
-        st.session_state.amharic_mode = not st.session_state.amharic_mode
-        mode = "Amharic Mode Active" if st.session_state.amharic_mode else "English Mode Active"
-        st.toast(f"🌐 {mode}")
-        st.rerun()
+        var vBtn = parentDoc.createElement("button");
+        vBtn.innerHTML = "🎙";
+        vBtn.title = "Voice Input";
+        vBtn.style.cssText = "background:#fff; border:1px solid #d0d7de; border-radius:8px; padding:8px 14px; font-size:18px; cursor:pointer; box-shadow:0 4px 10px rgba(0,0,0,0.15); transition:all 0.2s ease;";
 
-# Execute voice recognition directly in the top frame if triggered
-if st.session_state.start_speech:
-    st.session_state.start_speech = False
-    st.components.v1.html(
-        """
-        <script>
-        (function() {
-            var SpeechRecognition = window.parent.SpeechRecognition || window.parent.webkitSpeechRecognition;
+        var aBtn = parentDoc.createElement("button");
+        aBtn.innerHTML = "አ";
+        aBtn.title = "Amharic Input";
+        aBtn.style.cssText = "background:#fff; border:1px solid #d0d7de; border-radius:8px; padding:8px 14px; font-size:18px; cursor:pointer; box-shadow:0 4px 10px rgba(0,0,0,0.15); transition:all 0.2s ease;";
+
+        wrapper.appendChild(vBtn);
+        wrapper.appendChild(aBtn);
+        parentDoc.body.appendChild(wrapper);
+
+        var isRecording = false;
+        var recognition = null;
+        var SpeechRecognition = window.parent.SpeechRecognition || window.parent.webkitSpeechRecognition;
+
+        vBtn.onclick = function() {
             if (!SpeechRecognition) {
-                alert('Speech recognition is not supported in this browser. Please use Chrome or Edge.');
+                alert("Speech recognition requires Google Chrome or Microsoft Edge.");
                 return;
             }
 
-            var recognition = new SpeechRecognition();
+            if (isRecording) {
+                if (recognition) recognition.stop();
+                return;
+            }
+
+            recognition = new SpeechRecognition();
             recognition.continuous = false;
             recognition.interimResults = false;
             recognition.lang = 'en-US';
 
+            recognition.onstart = function() {
+                isRecording = true;
+                vBtn.style.backgroundColor = "#ffebe9";
+                vBtn.style.borderColor = "#cf222e";
+            };
+
             recognition.onresult = function(event) {
                 var transcript = event.results[0][0].transcript;
-                var chatInput = window.parent.document.querySelector('textarea[data-testid="stChatInputTextArea"]');
+                var chatInput = parentDoc.querySelector('textarea[data-testid="stChatInputTextArea"]');
                 if (chatInput) {
                     chatInput.value = transcript;
                     chatInput.dispatchEvent(new Event('input', { bubbles: true }));
@@ -328,13 +317,28 @@ if st.session_state.start_speech:
                 }
             };
 
-            recognition.onerror = function(event) {
-                alert('Mic error: ' + event.error);
+            recognition.onerror = function(e) {
+                alert("Speech recognition error: " + e.error);
+            };
+
+            recognition.onend = function() {
+                isRecording = false;
+                vBtn.style.backgroundColor = "#ffffff";
+                vBtn.style.borderColor = "#d0d7de";
             };
 
             recognition.start();
-        })();
-        </script>
-        """,
-        height=0
-    )
+        };
+
+        aBtn.onclick = function() {
+            var chatInput = parentDoc.querySelector('textarea[data-testid="stChatInputTextArea"]');
+            if (chatInput) {
+                chatInput.placeholder = "በአማርኛ ይጠይቁ... (Ask in Amharic...)";
+                chatInput.focus();
+            }
+        };
+    })();
+    </script>
+    """,
+    height=0,
+)
