@@ -97,7 +97,7 @@ def ask_groq(client: Groq, query: str, context_chunks: list) -> str:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            model="llama-3.3-70b-specdec",  # <-- USE THIS DEPLOYED MODEL
+            model="llama-3.3-70b-versatile",  # <--- ACTIVE WORKING MODEL
             temperature=0.2
         )
         return response.choices[0].message.content
