@@ -12,7 +12,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# Custom styling matching the custom UI layout
+# Custom CSS matching the custom UI layout
 st.markdown("""
 <style>
     section[data-testid="stSidebar"] {
@@ -94,7 +94,7 @@ def ask_groq(client: Groq, query: str, context_text: str) -> str:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            model="llama-3.1-8b-instant",  # Reliable production model on Groq
+            model="llama-3.1-8b-instant",
             temperature=0.2
         )
         return response.choices[0].message.content
@@ -131,7 +131,7 @@ with st.sidebar:
 st.subheader("🤖 ESS AI Assistant")
 st.caption("Ethiopia Statistical Service")
 
-# File upload area
+# Single file uploader block
 uploaded_file = st.file_uploader("Upload report PDF", type=["pdf"], label_visibility="collapsed")
 
 if uploaded_file and uploaded_file.name != st.session_state.current_file:
@@ -153,7 +153,7 @@ for msg in st.session_state.messages:
     else:
         st.markdown(f'<div class="bot-bubble">{msg["content"]}</div><div style="clear:both;"></div>', unsafe_allow_html=True)
 
-# User Input
+# Single Prompt Input Bar
 user_query = st.chat_input("Ask ESS AI Assistant...")
 
 if user_query:
