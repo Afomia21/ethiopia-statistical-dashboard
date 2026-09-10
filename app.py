@@ -18,14 +18,14 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS targeting the main content area for the floating buttons
+# Custom CSS for fixed bottom-right floating buttons
 st.markdown(
     """
     <style>
     .floating-button-wrapper {
         position: fixed;
         bottom: 30px;
-        left: calc(21rem + 30px); /* Offsets past the Streamlit sidebar */
+        right: 30px;
         z-index: 999999;
         display: flex;
         gap: 12px;
@@ -154,7 +154,7 @@ def process_and_index_pdf(uploaded_file, collection):
 pdf_collection = get_pdf_collection()
 
 # ==============================================================================
-# 3. SIDEBAR: USER AUTHENTICATION (USERNAME & PASSWORD) & CHAT HISTORY
+# 3. SIDEBAR: USER AUTHENTICATION & CHAT HISTORY
 # ==============================================================================
 with st.sidebar:
     st.subheader("👤 User Authentication")
@@ -233,7 +233,6 @@ if "chat_history" not in st.session_state:
 left_pad, center_col, right_pad = st.columns([1, 2, 1])
 
 with center_col:
-    # Native chat input bar with built-in upload '+' button
     chat_input_response = st.chat_input("Ask ESS AI Assistant...", accept_file=True)
 
     if chat_input_response:
@@ -244,7 +243,6 @@ with center_col:
             user_query = getattr(chat_input_response, "text", "")
             uploaded_files = getattr(chat_input_response, "files", [])
 
-        # Process any uploaded PDFs attached via the plus sign (+)
         if uploaded_files and pdf_collection:
             for file_obj in uploaded_files:
                 if file_obj.name.lower().endswith(".pdf"):
@@ -279,7 +277,7 @@ with center_col:
             st.markdown(f"**Answer:** {answer}")
 
 # ==============================================================================
-# 5. FLOATING BUTTONS PINNED TO BOTTOM LEFT OF MAIN CONTENT AREA
+# 5. FLOATING BUTTONS PINNED TO BOTTOM RIGHT
 # ==============================================================================
 st.markdown(
     """
