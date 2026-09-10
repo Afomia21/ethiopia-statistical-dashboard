@@ -9,7 +9,7 @@ from chromadb.utils import embedding_functions
 from groq import Groq
 
 # ==============================================================================
-# 1. PAGE CONFIG & CENTERED CHAT INPUT CSS
+# 1. PAGE CONFIG & PERFECTLY CENTERED CHAT BAR CSS
 # ==============================================================================
 st.set_page_config(
     page_title="ESS AI Buddy",
@@ -18,13 +18,21 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS to center and constrain the st.chat_input container
+# CSS to align and center the st.chat_input container in the middle of the screen
 st.markdown(
     """
     <style>
-    /* Constrain the fixed bottom chat input container to the center */
+    /* Centers the fixed bottom chat input container horizontally */
+    div[data-testid="stBottom"] {
+        display: flex !important;
+        justify-content: center !important;
+        background: transparent !important;
+    }
+    
+    /* Sets the width of the input box container to a clean centered width */
     div[data-testid="stBottom"] > div {
-        max-width: 50% !important;
+        width: 100% !important;
+        max-width: 700px !important;
         margin: 0 auto !important;
     }
     </style>
