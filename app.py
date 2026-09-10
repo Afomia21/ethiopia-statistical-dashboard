@@ -81,9 +81,11 @@ def get_pdf_collection():
     return None
 
 def ask_groq(client: Groq, query: str, context_chunks: list) -> str:
-    """Generates a grounded response using the Groq LLM API."""
-    context_text = "\n\n".join(context_chunks)
+    """Generates a high-speed grounded response using active Groq LLM API."""
+    # Concatenate top chunks up to a reasonable limit for low latency
+    context_text = "\n\n".join(context_chunks[:3])
     lang_instruction = "Respond in Amharic if the question is asked in Amharic." if st.session_state.amharic_mode else ""
+    
     system_prompt = (
         "You are an expert AI assistant for the Ethiopia Statistical Service (ESS).\n"
         "Answer the user query strictly based on the provided context below.\n"
@@ -98,8 +100,10 @@ def ask_groq(client: Groq, query: str, context_chunks: list) -> str:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            model="llama-3.1-8b-instant",
-            temperature=0.2
+            # Fast active model: llama-3.3-70b-versatile or llama3-8b-8192
+            model="llama-3.3-70b-versatile",
+            temperature=0.1,
+            max_tokens=1024
         )
         return response.choices[0].message.content
     except Exception as err:
@@ -254,11 +258,12 @@ if chat_input_response:
             docs = []
 
             if pdf_collection:
-                res = pdf_collection.query(query_texts=[user_query], n_results=5)
+                # Query top 3 chunks for faster processing speed
+                res = pdf_collection.query(query_texts=[user_query], n_results=3)
                 docs = res.get("documents", [[]])[0]
 
-            if client and docs:
-                answer = ask_groq(client, user_query, docs)
+            if client:
+                answer = ask_groq(client, user_query, docs if docs else ["No specific document context found."])
             elif not GROQ_API_KEY:
                 answer = "Error: GROQ_API_KEY is missing."
             else:
