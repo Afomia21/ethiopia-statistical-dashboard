@@ -22,22 +22,23 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-    /* Target Streamlit's bottom container wrapper */
+    /* Force the fixed bottom container to center relative to screen width */
     div[data-testid="stBottom"] {
-        left: 0 !important;
-        right: 0 !important;
+        position: fixed !important;
+        bottom: 20px !important;
+        left: 50% !important;
+        transform: translateX(-50%) !important;
         width: 100% !important;
-        display: flex !important;
-        justify-content: center !important;
+        max-width: 720px !important;
+        margin: 0 auto !important;
         background: transparent !important;
+        z-index: 999990 !important;
     }
 
-    /* Target the inner container surrounding st.chat_input */
+    /* Ensure inner layout inside stBottom respects centered bounds */
     div[data-testid="stBottom"] > div {
-        width: 60% !important;
-        max-width: 750px !important;
-        min-width: 320px !important;
-        margin: 0 auto !important;
+        width: 100% !important;
+        max-width: 720px !important;
     }
     </style>
     """,
