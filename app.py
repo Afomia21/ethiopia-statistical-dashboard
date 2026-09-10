@@ -99,8 +99,8 @@ def ask_groq(client: Groq, query: str, context_chunks: list) -> str:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            # Updated to standard, high-speed active model
-            model="llama3-8b-8192",
+            # Updated to active Groq production model string
+            model="llama-3.1-8b-instant",
             temperature=0.1,
             max_tokens=1024
         )
