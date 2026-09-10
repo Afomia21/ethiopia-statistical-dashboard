@@ -9,13 +9,27 @@ from chromadb.utils import embedding_functions
 from groq import Groq
 
 # ==============================================================================
-# 1. PAGE CONFIG
+# 1. PAGE CONFIG & CENTERED CHAT INPUT CSS
 # ==============================================================================
 st.set_page_config(
     page_title="ESS AI Buddy",
     page_icon="🤖",
     layout="wide",
     initial_sidebar_state="expanded"
+)
+
+# Custom CSS to center and constrain the st.chat_input container
+st.markdown(
+    """
+    <style>
+    /* Constrain the fixed bottom chat input container to the center */
+    div[data-testid="stBottom"] > div {
+        max-width: 50% !important;
+        margin: 0 auto !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
 )
 
 # Environment setup
@@ -182,7 +196,7 @@ with st.sidebar:
         st.caption("No previous questions found.")
 
 # ==============================================================================
-# 4. MAIN INTERFACE & CHAT CONSOLE
+# 4. MAIN INTERFACE & CENTERED CHAT CONSOLE
 # ==============================================================================
 if not WIDGET_MODE:
     st.markdown(
