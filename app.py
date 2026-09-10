@@ -18,26 +18,26 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for fixed bottom-left floating buttons
+# Custom CSS targeting the main content area for the floating buttons
 st.markdown(
     """
     <style>
     .floating-button-wrapper {
         position: fixed;
-        bottom: 25px;
-        left: 25px;
+        bottom: 30px;
+        left: calc(21rem + 30px); /* Offsets past the Streamlit sidebar */
         z-index: 999999;
         display: flex;
-        gap: 10px;
+        gap: 12px;
     }
     .custom-icon-btn {
         background-color: #ffffff;
         border: 1px solid #d0d7de;
         border-radius: 8px;
-        padding: 8px 14px;
-        font-size: 16px;
+        padding: 10px 16px;
+        font-size: 18px;
         cursor: pointer;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.15);
+        box-shadow: 0 4px 10px rgba(0,0,0,0.15);
         transition: all 0.2s ease-in-out;
     }
     .custom-icon-btn:hover {
@@ -154,17 +154,36 @@ def process_and_index_pdf(uploaded_file, collection):
 pdf_collection = get_pdf_collection()
 
 # ==============================================================================
-# 3. SIDEBAR: LOGIN SECTION & CHAT HISTORY ONLY
+# 3. SIDEBAR: USER AUTHENTICATION (USERNAME & PASSWORD) & CHAT HISTORY
 # ==============================================================================
 with st.sidebar:
     st.subheader("👤 User Authentication")
+    
+    if "authenticated" not in st.session_state:
+        st.session_state.authenticated = False
     if "username" not in st.session_state:
-        st.session_state.username = ""
+        st.session_state.username = "guest"
 
-    user_input = st.text_input("Username", value=st.session_state.username)
-    if st.button("Set User"):
-        st.session_state.username = user_input.strip() or "guest"
-        st.success(f"Logged in as: {st.session_state.username}")
+    if not st.session_state.authenticated:
+        with st.form("login_form"):
+            user_input = st.text_input("Username")
+            password_input = st.text_input("Password", type="password")
+            login_btn = st.form_submit_button("Login")
+
+            if login_btn:
+                if user_input.strip() and password_input.strip():
+                    st.session_state.authenticated = True
+                    st.session_state.username = user_input.strip()
+                    st.success(f"Welcome, {st.session_state.username}!")
+                    st.rerun()
+                else:
+                    st.error("Please enter both username and password.")
+    else:
+        st.write(f"Logged in as: **{st.session_state.username}**")
+        if st.button("Logout"):
+            st.session_state.authenticated = False
+            st.session_state.username = "guest"
+            st.rerun()
 
     st.markdown("---")
     st.subheader("📜 Chat History")
@@ -192,7 +211,7 @@ with st.sidebar:
         st.caption("No previous questions found.")
 
 # ==============================================================================
-# 4. HEADER SECTION & CHAT BAR WITH PLUS SIGN (+) UPLOADER
+# 4. MAIN INTERFACE & CHAT CONSOLE
 # ==============================================================================
 if not WIDGET_MODE:
     st.markdown(
@@ -214,11 +233,10 @@ if "chat_history" not in st.session_state:
 left_pad, center_col, right_pad = st.columns([1, 2, 1])
 
 with center_col:
-    # Enabled attachment '+' button directly inside chat input bar
+    # Native chat input bar with built-in upload '+' button
     chat_input_response = st.chat_input("Ask ESS AI Assistant...", accept_file=True)
 
     if chat_input_response:
-        # Separate prompt text from files attached via the '+' button
         if isinstance(chat_input_response, str):
             user_query = chat_input_response
             uploaded_files = []
@@ -261,7 +279,7 @@ with center_col:
             st.markdown(f"**Answer:** {answer}")
 
 # ==============================================================================
-# 5. FLOATING BUTTONS PINNED TO BOTTOM LEFT (🎙 & አ)
+# 5. FLOATING BUTTONS PINNED TO BOTTOM LEFT OF MAIN CONTENT AREA
 # ==============================================================================
 st.markdown(
     """
