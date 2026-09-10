@@ -97,7 +97,7 @@ def ask_groq(client: Groq, query: str, context_chunks: list) -> str:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            model="llama-3.1-8b-instant",  # <--- ACTIVE WORKING MODEL
+            model="openai/gpt-oss-20b",  # <--- ACTIVE WORKING MODEL
             temperature=0.2
         )
         return response.choices[0].message.content
