@@ -22,28 +22,27 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-    .floating-button-wrapper {
-        position: fixed;
-        bottom: 30px;
-        right: 30px;
-        z-index: 999999;
-        display: flex;
-        gap: 12px;
+    div[data-testid="stHorizontalBlock"]:has(button[key="mic_btn"]) {
+        position: fixed !important;
+        bottom: 30px !important;
+        right: 30px !important;
+        z-index: 999999 !important;
+        width: auto !important;
+        background: transparent !important;
     }
-    .custom-icon-btn {
-        background-color: #ffffff;
-        border: 1px solid #d0d7de;
-        border-radius: 8px;
-        padding: 10px 16px;
-        font-size: 18px;
-        cursor: pointer;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.15);
-        transition: all 0.2s ease-in-out;
+    .stButton > button {
+        background-color: #ffffff !important;
+        border: 1px solid #d0d7de !important;
+        border-radius: 8px !important;
+        padding: 10px 16px !important;
+        font-size: 18px !important;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.15) !important;
+        transition: all 0.2s ease-in-out !important;
     }
-    .custom-icon-btn:hover {
-        background-color: #f3f4f6;
-        border-color: #000000;
-        transform: translateY(-2px);
+    .stButton > button:hover {
+        background-color: #f3f4f6 !important;
+        border-color: #000000 !important;
+        transform: translateY(-2px) !important;
     }
     </style>
     """,
@@ -56,6 +55,9 @@ WIDGET_MODE = st.query_params.get("embed", "false").lower() == "true"
 DB_DIR = Path("chroma_db")
 COLLECTION_NAME = "ess_pdf_docs"
 DB_READY = False
+
+if "amharic_mode" not in st.session_state:
+    st.session_state.amharic_mode = False
 
 # ==============================================================================
 # 2. CHROMADB & HELPER FUNCTIONS
@@ -85,9 +87,11 @@ def get_pdf_collection():
 def ask_groq(client: Groq, query: str, context_chunks: list) -> str:
     """Generates a grounded response using the Groq LLM API."""
     context_text = "\n\n".join(context_chunks)
+    lang_instruction = "Respond in Amharic if the question is asked in Amharic." if st.session_state.amharic_mode else ""
     system_prompt = (
         "You are an expert AI assistant for the Ethiopia Statistical Service (ESS).\n"
         "Answer the user query strictly based on the provided context below.\n"
+        f"{lang_instruction}\n"
         "If the answer cannot be determined from the context, state that clearly."
     )
     user_prompt = f"Context:\n{context_text}\n\nQuery: {query}"
@@ -231,7 +235,8 @@ if "chat_history" not in st.session_state:
 left_pad, center_col, right_pad = st.columns([1, 2, 1])
 
 with center_col:
-    chat_input_response = st.chat_input("Ask ESS AI Assistant...", accept_file=True)
+    placeholder_text = "በአማርኛ ይጠይቁ... (Ask in Amharic...)" if st.session_state.amharic_mode else "Ask ESS AI Assistant..."
+    chat_input_response = st.chat_input(placeholder_text, accept_file=True)
 
     if chat_input_response:
         if isinstance(chat_input_response, str):
@@ -275,51 +280,38 @@ with center_col:
             st.markdown(f"**Answer:** {answer}")
 
 # ==============================================================================
-# 5. FLOATING BUTTONS PINNED TO BOTTOM RIGHT (WITH ACTIVE JS HANDLERS)
+# 5. WORKING FLOATING BUTTONS
 # ==============================================================================
-st.components.v1.html(
-    """
-    <script>
-    function triggerVoice() {
-        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-            var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-            var recognition = new SpeechRecognition();
-            recognition.continuous = false;
-            recognition.interimResults = false;
-            recognition.lang = 'en-US';
+btn_col1, btn_col2 = st.columns(2)
+with btn_col1:
+    if st.button("🎙", key="mic_btn"):
+        st.markdown(
+            """
+            <script>
+            if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+                var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                var recognition = new SpeechRecognition();
+                recognition.lang = 'en-US';
+                recognition.start();
+                recognition.onresult = function(e) {
+                    var text = e.results[0][0].transcript;
+                    var chatInput = document.querySelector('textarea[data-testid="stChatInputTextArea"]');
+                    if (chatInput) {
+                        chatInput.value = text;
+                        chatInput.dispatchEvent(new Event('input', { bubbles: true }));
+                    }
+                };
+            } else {
+                alert('Speech recognition is not supported on this browser. Try Chrome/Edge.');
+            }
+            </script>
+            """,
+            unsafe_allow_html=True
+        )
 
-            recognition.start();
-
-            recognition.onresult = function(e) {
-                var transcript = e.results[0][0].transcript;
-                var chatInput = window.parent.document.querySelector('textarea[data-testid="stChatInputTextArea"]');
-                if (chatInput) {
-                    chatInput.value = transcript;
-                    chatInput.dispatchEvent(new Event('input', { bubbles: true }));
-                }
-            };
-
-            recognition.onerror = function(e) {
-                alert('Microphone error or permission denied: ' + e.error);
-            };
-        } else {
-            alert('Speech recognition is not supported in this browser. Please use Chrome or Edge.');
-        }
-    }
-
-    function toggleAmharicMode() {
-        var chatInput = window.parent.document.querySelector('textarea[data-testid="stChatInputTextArea"]');
-        if (chatInput) {
-            chatInput.placeholder = "በአማርኛ ይጠይቁ... (Ask in Amharic...)";
-            alert("Language set to Amharic (አማርኛ). You can now ask questions in Amharic!");
-        }
-    }
-    </script>
-
-    <div style="position: fixed; bottom: 30px; right: 30px; z-index: 999999; display: flex; gap: 12px;">
-        <button style="background-color: #ffffff; border: 1px solid #d0d7de; border-radius: 8px; padding: 10px 16px; font-size: 18px; cursor: pointer; box-shadow: 0 4px 10px rgba(0,0,0,0.15);" onclick="triggerVoice()">🎙</button>
-        <button style="background-color: #ffffff; border: 1px solid #d0d7de; border-radius: 8px; padding: 10px 16px; font-size: 18px; cursor: pointer; box-shadow: 0 4px 10px rgba(0,0,0,0.15);" onclick="toggleAmharicMode()">አ</button>
-    </div>
-    """,
-    height=0,
-)
+with btn_col2:
+    if st.button("አ", key="amharic_btn"):
+        st.session_state.amharic_mode = not st.session_state.amharic_mode
+        status = "Amharic Mode Active" if st.session_state.amharic_mode else "English Mode Active"
+        st.toast(f"🌐 {status}")
+        st.rerun()
