@@ -9,7 +9,7 @@ from chromadb.utils import embedding_functions
 from groq import Groq
 
 # ==============================================================================
-# 1. PAGE CONFIG & PERFECTLY CENTERED CHAT BAR CSS
+# 1. PAGE CONFIG & CENTERED CHAT INPUT CSS
 # ==============================================================================
 st.set_page_config(
     page_title="ESS AI Buddy",
@@ -18,21 +18,25 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# CSS to align and center the st.chat_input container in the middle of the screen
+# Force the fixed bottom chat container to center horizontally
 st.markdown(
     """
     <style>
-    /* Centers the fixed bottom chat input container horizontally */
+    /* Target Streamlit's bottom container wrapper */
     div[data-testid="stBottom"] {
+        left: 0 !important;
+        right: 0 !important;
+        width: 100% !important;
         display: flex !important;
         justify-content: center !important;
         background: transparent !important;
     }
-    
-    /* Sets the width of the input box container to a clean centered width */
+
+    /* Target the inner container surrounding st.chat_input */
     div[data-testid="stBottom"] > div {
-        width: 100% !important;
-        max-width: 700px !important;
+        width: 60% !important;
+        max-width: 750px !important;
+        min-width: 320px !important;
         margin: 0 auto !important;
     }
     </style>
@@ -204,7 +208,7 @@ with st.sidebar:
         st.caption("No previous questions found.")
 
 # ==============================================================================
-# 4. MAIN INTERFACE & CENTERED CHAT CONSOLE
+# 4. MAIN INTERFACE & CHAT CONSOLE
 # ==============================================================================
 if not WIDGET_MODE:
     st.markdown(
@@ -268,7 +272,7 @@ if chat_input_response:
         st.markdown(f"**Answer:** {answer}")
 
 # ==============================================================================
-# 5. FIXED BOTTOM-RIGHT FLOATING BUTTONS & WORKING SPEECH-TO-TEXT
+# 5. FLOATING BUTTONS (BOTTOM RIGHT)
 # ==============================================================================
 st.components.v1.html(
     """
@@ -283,8 +287,8 @@ st.components.v1.html(
         var wrapper = parentDoc.createElement("div");
         wrapper.id = "ess-floating-wrapper-root";
         wrapper.style.position = "fixed";
-        wrapper.style.bottom = "25px";
-        wrapper.style.right = "25px";
+        wrapper.style.bottom = "20px";
+        wrapper.style.right = "20px";
         wrapper.style.zIndex = "999999";
         wrapper.style.display = "flex";
         wrapper.style.gap = "8px";
