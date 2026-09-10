@@ -79,7 +79,7 @@ def get_pdf_collection():
     return None
 
 def ask_groq(client: Groq, query: str, context_chunks: list) -> str:
-    """Generates a grounded response using the Groq API with failover model support."""
+    """Generates a grounded response using active Groq models with fallback support."""
     context_text = "\n\n".join(context_chunks) if context_chunks else "No relevant context found."
     system_prompt = (
         "You are an expert AI assistant for the Ethiopia Statistical Service (ESS).\n"
@@ -88,8 +88,12 @@ def ask_groq(client: Groq, query: str, context_chunks: list) -> str:
     )
     user_prompt = f"Context:\n{context_text}\n\nQuery: {query}"
 
-    # List of models to try in sequence if one returns 404
-    candidate_models = ["llama-3.1-8b-instant", "llama3-70b-8192", "mixtral-8x7b-32768"]
+    # Use active, current Groq model endpoints
+    candidate_models = [
+        "llama-3.3-70b-versatile",
+        "llama-3.1-8b-instant",
+        "mixtral-8x7b-32768"
+    ]
 
     for model_name in candidate_models:
         try:
@@ -102,10 +106,10 @@ def ask_groq(client: Groq, query: str, context_chunks: list) -> str:
                 temperature=0.2
             )
             return response.choices[0].message.content
-        except Exception as err:
-            if "404" in str(err) or "model_not_found" in str(err):
-                continue  # Try next model in list
-            return f"Error communicating with Groq API: {err}"
+        except Exception:
+            # Catch all model-level failures (decommissioned 400, not found 404, rate limits) 
+            # and gracefully fall back to the next model in candidate_models
+            continue
 
     return "Error: None of the candidate Groq models were accessible with your current API Key."
 
@@ -234,14 +238,13 @@ if not WIDGET_MODE:
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
-# Display previous messages in the current session
+# Display current session messages
 for q, a in st.session_state.chat_history:
     with st.chat_message("user"):
         st.write(q)
     with st.chat_message("assistant"):
         st.write(a)
 
-# Standard full-width Chat Input (Prevents duplication & layout breaking)
 chat_input_response = st.chat_input("Ask ESS AI Assistant...", accept_file=True)
 
 if chat_input_response:
@@ -258,34 +261,29 @@ if chat_input_response:
                 process_and_index_pdf(file_obj, pdf_collection)
 
     if user_query:
-        with st.chat_message("user"):
-            st.write(user_query)
+        cached_res = get_cached_answer(user_query) if DB_READY else None
 
-        with st.chat_message("assistant"):
-            with st.spinner("Thinking..."):
-                cached_res = get_cached_answer(user_query) if DB_READY else None
+        if cached_res:
+            answer, route, src_doc, src_page = cached_res
+        else:
+            client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
+            docs = []
 
-                if cached_res:
-                    answer, route, src_doc, src_page = cached_res
-                else:
-                    client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
-                    docs = []
+            if pdf_collection:
+                res = pdf_collection.query(query_texts=[user_query], n_results=5)
+                docs = res.get("documents", [[]])[0]
 
-                    if pdf_collection:
-                        res = pdf_collection.query(query_texts=[user_query], n_results=5)
-                        docs = res.get("documents", [[]])[0]
+            if client:
+                answer = ask_groq(client, user_query, docs)
+            elif not GROQ_API_KEY:
+                answer = "Error: GROQ_API_KEY is missing in secrets or environment variables."
+            else:
+                answer = "I couldn't locate specific information on that in the documents or tables."
 
-                    if client:
-                        answer = ask_groq(client, user_query, docs)
-                    elif not GROQ_API_KEY:
-                        answer = "Error: GROQ_API_KEY is missing in secrets or environment variables."
-                    else:
-                        answer = "I couldn't locate specific information on that in the documents or tables."
+            if DB_READY:
+                current_user = st.session_state.get("username", "guest")
+                save_chat(current_user, user_query, answer, "pdf")
+                save_to_cache(user_query, answer, "pdf", "", "")
 
-                    if DB_READY:
-                        current_user = st.session_state.get("username", "guest")
-                        save_chat(current_user, user_query, answer, "pdf")
-                        save_to_cache(user_query, answer, "pdf", "", "")
-
-                st.write(answer)
-                st.session_state.chat_history.append((user_query, answer))
+        st.session_state.chat_history.append((user_query, answer))
+        st.rerun()
