@@ -9,7 +9,7 @@ from chromadb.utils import embedding_functions
 from groq import Groq
 
 # ==============================================================================
-# 1. PAGE CONFIG
+# 1. PAGE CONFIG & FIXED BOTTOM-RIGHT FLOATING BUTTONS
 # ==============================================================================
 st.set_page_config(
     page_title="ESS AI Buddy",
@@ -18,18 +18,33 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for fixed bottom-right container wrapper
+# Custom CSS targeting the container holding the buttons to pin it strictly to bottom-right
 st.markdown(
     """
     <style>
-    iframe[title="st.components.v1.html"] {
+    div[data-testid="stHorizontalBlock"]:has(button[key="voice_button_main"]) {
         position: fixed !important;
-        bottom: 20px !important;
-        right: 20px !important;
-        width: 140px !important;
-        height: 60px !important;
+        bottom: 25px !important;
+        right: 25px !important;
         z-index: 999999 !important;
-        border: none !important;
+        width: auto !important;
+        background: transparent !important;
+        display: flex !important;
+        flex-direction: row !important;
+        gap: 8px !important;
+    }
+    div[data-testid="stHorizontalBlock"]:has(button[key="voice_button_main"]) .stButton > button {
+        background-color: #ffffff !important;
+        border: 1px solid #d0d7de !important;
+        border-radius: 8px !important;
+        padding: 8px 14px !important;
+        font-size: 18px !important;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.15) !important;
+        transition: all 0.2s ease-in-out !important;
+    }
+    div[data-testid="stHorizontalBlock"]:has(button[key="voice_button_main"]) .stButton > button:hover {
+        background-color: #f3f4f6 !important;
+        border-color: #000000 !important;
     }
     </style>
     """,
@@ -45,6 +60,9 @@ DB_READY = False
 
 if "amharic_mode" not in st.session_state:
     st.session_state.amharic_mode = False
+
+if "start_speech" not in st.session_state:
+    st.session_state.start_speech = False
 
 # ==============================================================================
 # 2. CHROMADB & HELPER FUNCTIONS
@@ -267,99 +285,56 @@ with center_col:
             st.markdown(f"**Answer:** {answer}")
 
 # ==============================================================================
-# 5. PINNED BOTTOM-RIGHT FLOATING BUTTONS
+# 5. WORKING FLOATING BUTTONS PINNED AT BOTTOM RIGHT
 # ==============================================================================
-st.components.v1.html(
-    """
-    <style>
-    body {
-        margin: 0;
-        padding: 0;
-        overflow: hidden;
-        background: transparent;
-    }
-    .floating-group {
-        display: flex;
-        flex-direction: row;
-        gap: 8px;
-        align-items: center;
-        justify-content: flex-end;
-    }
-    .btn-style {
-        background-color: #ffffff;
-        border: 1px solid #d0d7de;
-        border-radius: 8px;
-        padding: 8px 14px;
-        font-size: 18px;
-        cursor: pointer;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.15);
-        transition: all 0.2s ease-in-out;
-    }
-    .btn-style:hover {
-        background-color: #f3f4f6;
-        border-color: #000000;
-    }
-    </style>
+float_col1, float_col2 = st.columns([1, 1])
 
-    <div class="floating-group">
-        <button class="btn-style" id="voiceBtn">🎙</button>
-        <button class="btn-style" id="amharicBtn">አ</button>
-    </div>
+with float_col1:
+    if st.button("🎙", key="voice_button_main"):
+        st.session_state.start_speech = True
 
-    <script>
-    document.getElementById('voiceBtn').onclick = function() {
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-            alert("Microphone access is blocked or unsupported by this browser.");
-            return;
-        }
+with float_col2:
+    if st.button("አ", key="amharic_button_main"):
+        st.session_state.amharic_mode = not st.session_state.amharic_mode
+        mode = "Amharic Mode Active" if st.session_state.amharic_mode else "English Mode Active"
+        st.toast(f"🌐 {mode}")
+        st.rerun()
 
-        navigator.mediaDevices.getUserMedia({ audio: true })
-            .then(function(stream) {
-                var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-                if (!SpeechRecognition) {
-                    alert('Speech Recognition unsupported in this browser. Use Chrome or Edge.');
-                    return;
+# Execute voice recognition directly in the top frame if triggered
+if st.session_state.start_speech:
+    st.session_state.start_speech = False
+    st.components.v1.html(
+        """
+        <script>
+        (function() {
+            var SpeechRecognition = window.parent.SpeechRecognition || window.parent.webkitSpeechRecognition;
+            if (!SpeechRecognition) {
+                alert('Speech recognition is not supported in this browser. Please use Chrome or Edge.');
+                return;
+            }
+
+            var recognition = new SpeechRecognition();
+            recognition.continuous = false;
+            recognition.interimResults = false;
+            recognition.lang = 'en-US';
+
+            recognition.onresult = function(event) {
+                var transcript = event.results[0][0].transcript;
+                var chatInput = window.parent.document.querySelector('textarea[data-testid="stChatInputTextArea"]');
+                if (chatInput) {
+                    chatInput.value = transcript;
+                    chatInput.dispatchEvent(new Event('input', { bubbles: true }));
+                    chatInput.focus();
                 }
+            };
 
-                var recognition = new SpeechRecognition();
-                recognition.continuous = false;
-                recognition.interimResults = false;
-                recognition.lang = 'en-US';
+            recognition.onerror = function(event) {
+                alert('Mic error: ' + event.error);
+            };
 
-                recognition.onresult = function(event) {
-                    var text = event.results[0][0].transcript;
-                    var parentDoc = window.parent.document;
-                    var chatInput = parentDoc.querySelector('textarea[data-testid="stChatInputTextArea"]');
-                    if (chatInput) {
-                        chatInput.value = text;
-                        chatInput.dispatchEvent(new Event('input', { bubbles: true }));
-                        chatInput.focus();
-                    }
-                    stream.getTracks().forEach(track => track.stop());
-                };
-
-                recognition.onerror = function(err) {
-                    alert('Voice recognition note: ' + err.error);
-                    stream.getTracks().forEach(track => track.stop());
-                };
-
-                recognition.start();
-            })
-            .catch(function(err) {
-                alert("Microphone permission denied: " + err.message);
-            });
-    };
-
-    document.getElementById('amharicBtn').onclick = function() {
-        var parentDoc = window.parent.document;
-        var chatInput = parentDoc.querySelector('textarea[data-testid="stChatInputTextArea"]');
-        if (chatInput) {
-            chatInput.placeholder = "በአማርኛ ይጠይቁ... (Ask in Amharic...)";
-            chatInput.focus();
-        }
-        alert("Language set to Amharic (አማርኛ). Type your query below!");
-    };
-    </script>
-    """,
-    height=60,
-)
+            recognition.start();
+        })();
+        </script>
+        """,
+        height=0
+    )
