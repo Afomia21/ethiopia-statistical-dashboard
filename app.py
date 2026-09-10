@@ -9,7 +9,7 @@ from chromadb.utils import embedding_functions
 from groq import Groq
 
 # ==============================================================================
-# 1. PAGE CONFIG & FIXED FLOATING BUTTONS CSS
+# 1. PAGE CONFIG & STYLING
 # ==============================================================================
 st.set_page_config(
     page_title="ESS AI Buddy",
@@ -18,32 +18,28 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for fixed bottom-right floating buttons
+# Custom CSS for header styling
 st.markdown(
     """
     <style>
-    .floating-button-wrapper {
-        position: fixed;
-        bottom: 30px;
-        right: 30px;
-        z-index: 999999;
+    .ess-bot-header {
         display: flex;
-        gap: 12px;
+        align-items: center;
+        gap: 15px;
+        margin-bottom: 25px;
     }
-    .custom-icon-btn {
-        background-color: #ffffff;
-        border: 1px solid #d0d7de;
-        border-radius: 8px;
-        padding: 10px 16px;
-        font-size: 18px;
-        cursor: pointer;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.15);
-        transition: all 0.2s ease-in-out;
+    .ess-bot-avatar {
+        font-size: 40px;
     }
-    .custom-icon-btn:hover {
-        background-color: #f3f4f6;
-        border-color: #000000;
-        transform: translateY(-2px);
+    .ess-bot-title {
+        font-size: 28px;
+        font-weight: bold;
+        margin: 0;
+    }
+    .ess-bot-subtitle {
+        font-size: 14px;
+        color: #666;
+        margin: 0;
     }
     </style>
     """,
@@ -83,8 +79,8 @@ def get_pdf_collection():
     return None
 
 def ask_groq(client: Groq, query: str, context_chunks: list) -> str:
-    """Generates a grounded response using the Groq LLM API."""
-    context_text = "\n\n".join(context_chunks) if context_chunks else "No relevant document context found."
+    """Generates a grounded response using the Groq API with failover model support."""
+    context_text = "\n\n".join(context_chunks) if context_chunks else "No relevant context found."
     system_prompt = (
         "You are an expert AI assistant for the Ethiopia Statistical Service (ESS).\n"
         "Answer the user query strictly based on the provided context below.\n"
@@ -92,18 +88,26 @@ def ask_groq(client: Groq, query: str, context_chunks: list) -> str:
     )
     user_prompt = f"Context:\n{context_text}\n\nQuery: {query}"
 
-    try:
-        response = client.chat.completions.create(
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            model="llama-3.3-70b-versatile",  # <--- ACTIVE WORKING GROQ MODEL
-            temperature=0.2
-        )
-        return response.choices[0].message.content
-    except Exception as err:
-        return f"Error communicating with Groq API: {err}"
+    # List of models to try in sequence if one returns 404
+    candidate_models = ["llama-3.1-8b-instant", "llama3-70b-8192", "mixtral-8x7b-32768"]
+
+    for model_name in candidate_models:
+        try:
+            response = client.chat.completions.create(
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                model=model_name,
+                temperature=0.2
+            )
+            return response.choices[0].message.content
+        except Exception as err:
+            if "404" in str(err) or "model_not_found" in str(err):
+                continue  # Try next model in list
+            return f"Error communicating with Groq API: {err}"
+
+    return "Error: None of the candidate Groq models were accessible with your current API Key."
 
 def load_chat_history(username: str):
     return st.session_state.get(f"history_{username}", [])
@@ -150,11 +154,11 @@ def process_and_index_pdf(uploaded_file, collection):
                 st.session_state[session_key] = True
                 st.toast(f"✅ Indexed '{uploaded_file.name}' successfully!")
 
-# Initialize ChromaDB connection
+# Initialize ChromaDB
 pdf_collection = get_pdf_collection()
 
 # ==============================================================================
-# 3. SIDEBAR: USER AUTHENTICATION & CHAT HISTORY
+# 3. SIDEBAR: AUTH & HISTORY
 # ==============================================================================
 with st.sidebar:
     st.subheader("👤 User Authentication")
@@ -179,7 +183,7 @@ with st.sidebar:
                 else:
                     st.error("Please enter both username and password.")
     else:
-        st.write(f"Logged in as: {st.session_state.username}")
+        st.write(f"Logged in as: **{st.session_state.username}**")
         if st.button("Logout"):
             st.session_state.authenticated = False
             st.session_state.username = "guest"
@@ -205,13 +209,13 @@ with st.sidebar:
             q_text = item[0]
             a_text = item[1]
             with st.expander(f"❓ {q_text[:30]}..."):
-                st.write(f"Q: {q_text}")
-                st.write(f"A: {a_text}")
+                st.write(f"**Q:** {q_text}")
+                st.write(f"**A:** {a_text}")
     else:
         st.caption("No previous questions found.")
 
 # ==============================================================================
-# 4. MAIN INTERFACE & CHAT CONSOLE
+# 4. MAIN INTERFACE & CHAT DISPLAY
 # ==============================================================================
 if not WIDGET_MODE:
     st.markdown(
@@ -230,61 +234,58 @@ if not WIDGET_MODE:
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
-left_pad, center_col, right_pad = st.columns([1, 2, 1])
+# Display previous messages in the current session
+for q, a in st.session_state.chat_history:
+    with st.chat_message("user"):
+        st.write(q)
+    with st.chat_message("assistant"):
+        st.write(a)
 
-with center_col:
-    chat_input_response = st.chat_input("Ask ESS AI Assistant...", accept_file=True)
+# Standard full-width Chat Input (Prevents duplication & layout breaking)
+chat_input_response = st.chat_input("Ask ESS AI Assistant...", accept_file=True)
 
-    if chat_input_response:
-        if isinstance(chat_input_response, str):
-            user_query = chat_input_response
-            uploaded_files = []
-        else:
-            user_query = getattr(chat_input_response, "text", "")
-            uploaded_files = getattr(chat_input_response, "files", [])
+if chat_input_response:
+    if isinstance(chat_input_response, str):
+        user_query = chat_input_response
+        uploaded_files = []
+    else:
+        user_query = getattr(chat_input_response, "text", "")
+        uploaded_files = getattr(chat_input_response, "files", [])
 
-        if uploaded_files and pdf_collection:
-            for file_obj in uploaded_files:
-                if file_obj.name.lower().endswith(".pdf"):
-                    process_and_index_pdf(file_obj, pdf_collection)
+    if uploaded_files and pdf_collection:
+        for file_obj in uploaded_files:
+            if file_obj.name.lower().endswith(".pdf"):
+                process_and_index_pdf(file_obj, pdf_collection)
 
-        if user_query:
-            cached_res = get_cached_answer(user_query) if DB_READY else None
+    if user_query:
+        with st.chat_message("user"):
+            st.write(user_query)
 
-            if cached_res:
-                answer, route, src_doc, src_page = cached_res
-            else:
-                client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
-                docs = []
+        with st.chat_message("assistant"):
+            with st.spinner("Thinking..."):
+                cached_res = get_cached_answer(user_query) if DB_READY else None
 
-                if pdf_collection:
-                    res = pdf_collection.query(query_texts=[user_query], n_results=5)
-                    docs = res.get("documents", [[]])[0]
-
-                if client:
-                    answer = ask_groq(client, user_query, docs)
-                elif not GROQ_API_KEY:
-                    answer = "Error: GROQ_API_KEY is missing."
+                if cached_res:
+                    answer, route, src_doc, src_page = cached_res
                 else:
-                    answer = "I couldn't locate specific information on that in the documents or tables."
+                    client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
+                    docs = []
 
-                if DB_READY:
-                    current_user = st.session_state.get("username", "guest")
-                    save_chat(current_user, user_query, answer, "pdf")
-                    save_to_cache(user_query, answer, "pdf", "", "")
+                    if pdf_collection:
+                        res = pdf_collection.query(query_texts=[user_query], n_results=5)
+                        docs = res.get("documents", [[]])[0]
 
-            st.session_state.chat_history.append((user_query, answer))
-            st.markdown(f"Answer: {answer}")
+                    if client:
+                        answer = ask_groq(client, user_query, docs)
+                    elif not GROQ_API_KEY:
+                        answer = "Error: GROQ_API_KEY is missing in secrets or environment variables."
+                    else:
+                        answer = "I couldn't locate specific information on that in the documents or tables."
 
-# ==============================================================================
-# 5. FLOATING BUTTONS PINNED TO BOTTOM RIGHT
-# ==============================================================================
-st.markdown(
-    """
-    <div class="floating-button-wrapper">
-        <button class="custom-icon-btn" onclick="alert('Mic clicked')">🎙</button>
-        <button class="custom-icon-btn" onclick="alert('Amharic clicked')">አ</button>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+                    if DB_READY:
+                        current_user = st.session_state.get("username", "guest")
+                        save_chat(current_user, user_query, answer, "pdf")
+                        save_to_cache(user_query, answer, "pdf", "", "")
+
+                st.write(answer)
+                st.session_state.chat_history.append((user_query, answer))
