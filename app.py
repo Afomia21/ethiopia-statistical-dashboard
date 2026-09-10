@@ -98,7 +98,7 @@ def ask_groq(client: Groq, query: str, context_chunks: list) -> str:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            model="llama-3.1-8b-instant",  # Updated to active Groq production model ID
+            model="llama-3.1-8b-instant",
             temperature=0.2
         )
         return response.choices[0].message.content
@@ -137,7 +137,6 @@ def process_and_index_pdf(uploaded_file, collection):
                     if text:
                         chunks.append(text)
                         metadatas.append({"source": uploaded_file.name, "page": page_num + 1})
-                        # Generate unique IDs to prevent duplicate insertion errors
                         ids.append(f"upload_{uploaded_file.name}_p{page_num + 1}_{os.urandom(4).hex()}")
 
                 doc.close()
@@ -276,14 +275,51 @@ with center_col:
             st.markdown(f"**Answer:** {answer}")
 
 # ==============================================================================
-# 5. FLOATING BUTTONS PINNED TO BOTTOM RIGHT
+# 5. FLOATING BUTTONS PINNED TO BOTTOM RIGHT (WITH ACTIVE JS HANDLERS)
 # ==============================================================================
-st.markdown(
+st.components.v1.html(
     """
-    <div class="floating-button-wrapper">
-        <button class="custom-icon-btn" onclick="alert('Mic clicked')">🎙</button>
-        <button class="custom-icon-btn" onclick="alert('Amharic clicked')">አ</button>
+    <script>
+    function triggerVoice() {
+        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+            var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            var recognition = new SpeechRecognition();
+            recognition.continuous = false;
+            recognition.interimResults = false;
+            recognition.lang = 'en-US';
+
+            recognition.start();
+
+            recognition.onresult = function(e) {
+                var transcript = e.results[0][0].transcript;
+                var chatInput = window.parent.document.querySelector('textarea[data-testid="stChatInputTextArea"]');
+                if (chatInput) {
+                    chatInput.value = transcript;
+                    chatInput.dispatchEvent(new Event('input', { bubbles: true }));
+                }
+            };
+
+            recognition.onerror = function(e) {
+                alert('Microphone error or permission denied: ' + e.error);
+            };
+        } else {
+            alert('Speech recognition is not supported in this browser. Please use Chrome or Edge.');
+        }
+    }
+
+    function toggleAmharicMode() {
+        var chatInput = window.parent.document.querySelector('textarea[data-testid="stChatInputTextArea"]');
+        if (chatInput) {
+            chatInput.placeholder = "በአማርኛ ይጠይቁ... (Ask in Amharic...)";
+            alert("Language set to Amharic (አማርኛ). You can now ask questions in Amharic!");
+        }
+    }
+    </script>
+
+    <div style="position: fixed; bottom: 30px; right: 30px; z-index: 999999; display: flex; gap: 12px;">
+        <button style="background-color: #ffffff; border: 1px solid #d0d7de; border-radius: 8px; padding: 10px 16px; font-size: 18px; cursor: pointer; box-shadow: 0 4px 10px rgba(0,0,0,0.15);" onclick="triggerVoice()">🎙</button>
+        <button style="background-color: #ffffff; border: 1px solid #d0d7de; border-radius: 8px; padding: 10px 16px; font-size: 18px; cursor: pointer; box-shadow: 0 4px 10px rgba(0,0,0,0.15);" onclick="toggleAmharicMode()">አ</button>
     </div>
     """,
-    unsafe_allow_html=True,
+    height=0,
 )
