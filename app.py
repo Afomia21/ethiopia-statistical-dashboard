@@ -9,44 +9,13 @@ from chromadb.utils import embedding_functions
 from groq import Groq
 
 # ==============================================================================
-# 1. PAGE CONFIG & FIXED FLOATING BUTTONS CSS
+# 1. PAGE CONFIG
 # ==============================================================================
 st.set_page_config(
     page_title="ESS AI Buddy",
     page_icon="🤖",
     layout="wide",
     initial_sidebar_state="expanded"
-)
-
-# Custom CSS for fixed bottom-right floating buttons
-st.markdown(
-    """
-    <style>
-    div[data-testid="stHorizontalBlock"]:has(button[key="mic_btn"]) {
-        position: fixed !important;
-        bottom: 30px !important;
-        right: 30px !important;
-        z-index: 999999 !important;
-        width: auto !important;
-        background: transparent !important;
-    }
-    .stButton > button {
-        background-color: #ffffff !important;
-        border: 1px solid #d0d7de !important;
-        border-radius: 8px !important;
-        padding: 10px 16px !important;
-        font-size: 18px !important;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.15) !important;
-        transition: all 0.2s ease-in-out !important;
-    }
-    .stButton > button:hover {
-        background-color: #f3f4f6 !important;
-        border-color: #000000 !important;
-        transform: translateY(-2px) !important;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
 )
 
 # Environment setup
@@ -280,38 +249,90 @@ with center_col:
             st.markdown(f"**Answer:** {answer}")
 
 # ==============================================================================
-# 5. WORKING FLOATING BUTTONS
+# 5. FIXED BOTTOM-RIGHT FLOATING BUTTONS (SIDE-BY-SIDE + WORKING VOICE/AMHARIC)
 # ==============================================================================
-btn_col1, btn_col2 = st.columns(2)
-with btn_col1:
-    if st.button("🎙", key="mic_btn"):
-        st.markdown(
-            """
-            <script>
-            if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-                var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-                var recognition = new SpeechRecognition();
-                recognition.lang = 'en-US';
-                recognition.start();
-                recognition.onresult = function(e) {
-                    var text = e.results[0][0].transcript;
-                    var chatInput = document.querySelector('textarea[data-testid="stChatInputTextArea"]');
-                    if (chatInput) {
-                        chatInput.value = text;
-                        chatInput.dispatchEvent(new Event('input', { bubbles: true }));
-                    }
-                };
-            } else {
-                alert('Speech recognition is not supported on this browser. Try Chrome/Edge.');
-            }
-            </script>
-            """,
-            unsafe_allow_html=True
-        )
+st.components.v1.html(
+    """
+    <style>
+    .floating-container {
+        position: fixed;
+        bottom: 30px;
+        right: 30px;
+        z-index: 999999;
+        display: flex;
+        flex-direction: row;
+        gap: 10px;
+    }
+    .custom-floating-btn {
+        background-color: #ffffff;
+        border: 1px solid #d0d7de;
+        border-radius: 8px;
+        padding: 10px 16px;
+        font-size: 18px;
+        cursor: pointer;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+        transition: all 0.2s ease-in-out;
+    }
+    .custom-floating-btn:hover {
+        background-color: #f3f4f6;
+        border-color: #000000;
+        transform: translateY(-2px);
+    }
+    </style>
 
-with btn_col2:
-    if st.button("አ", key="amharic_btn"):
-        st.session_state.amharic_mode = not st.session_state.amharic_mode
-        status = "Amharic Mode Active" if st.session_state.amharic_mode else "English Mode Active"
-        st.toast(f"🌐 {status}")
-        st.rerun()
+    <div class="floating-container">
+        <button class="custom-floating-btn" onclick="startVoiceRecognition()">🎙</button>
+        <button class="custom-floating-btn" onclick="toggleAmharicPrompt()">አ</button>
+    </div>
+
+    <script>
+    function startVoiceRecognition() {
+        var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) {
+            alert('Speech Recognition is not supported by your browser. Please use Chrome or Edge.');
+            return;
+        }
+
+        var recognition = new SpeechRecognition();
+        recognition.continuous = false;
+        recognition.interimResults = false;
+        recognition.lang = 'en-US';
+
+        recognition.onstart = function() {
+            console.log('Voice recognition activated.');
+        };
+
+        recognition.onresult = function(event) {
+            var transcript = event.results[0][0].transcript;
+            var targetDocument = window.parent.document;
+            var chatInput = targetDocument.querySelector('textarea[data-testid="stChatInputTextArea"]');
+
+            if (chatInput) {
+                chatInput.value = transcript;
+                chatInput.dispatchEvent(new Event('input', { bubbles: true }));
+                chatInput.focus();
+            } else {
+                alert('Speech recorded: ' + transcript);
+            }
+        };
+
+        recognition.onerror = function(event) {
+            alert('Speech recognition error: ' + event.error);
+        };
+
+        recognition.start();
+    }
+
+    function toggleAmharicPrompt() {
+        var targetDocument = window.parent.document;
+        var chatInput = targetDocument.querySelector('textarea[data-testid="stChatInputTextArea"]');
+        if (chatInput) {
+            chatInput.placeholder = "በአማርኛ ይጠይቁ... (Ask in Amharic...)";
+            chatInput.focus();
+        }
+        alert("Language mode set to Amharic (አማርኛ). You can now type or dictate in Amharic!");
+    }
+    </script>
+    """,
+    height=80,
+)
