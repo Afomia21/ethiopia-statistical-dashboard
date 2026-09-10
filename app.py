@@ -18,6 +18,24 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Custom CSS for fixed bottom-right container wrapper
+st.markdown(
+    """
+    <style>
+    iframe[title="st.components.v1.html"] {
+        position: fixed !important;
+        bottom: 20px !important;
+        right: 20px !important;
+        width: 140px !important;
+        height: 60px !important;
+        z-index: 999999 !important;
+        border: none !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 # Environment setup
 GROQ_API_KEY = st.secrets.get("GROQ_API_KEY") or os.getenv("GROQ_API_KEY")
 WIDGET_MODE = st.query_params.get("embed", "false").lower() == "true"
@@ -249,90 +267,99 @@ with center_col:
             st.markdown(f"**Answer:** {answer}")
 
 # ==============================================================================
-# 5. FIXED BOTTOM-RIGHT FLOATING BUTTONS (SIDE-BY-SIDE + WORKING VOICE/AMHARIC)
+# 5. PINNED BOTTOM-RIGHT FLOATING BUTTONS
 # ==============================================================================
 st.components.v1.html(
     """
     <style>
-    .floating-container {
-        position: fixed;
-        bottom: 30px;
-        right: 30px;
-        z-index: 999999;
+    body {
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        background: transparent;
+    }
+    .floating-group {
         display: flex;
         flex-direction: row;
-        gap: 10px;
+        gap: 8px;
+        align-items: center;
+        justify-content: flex-end;
     }
-    .custom-floating-btn {
+    .btn-style {
         background-color: #ffffff;
         border: 1px solid #d0d7de;
         border-radius: 8px;
-        padding: 10px 16px;
+        padding: 8px 14px;
         font-size: 18px;
         cursor: pointer;
         box-shadow: 0 4px 10px rgba(0,0,0,0.15);
         transition: all 0.2s ease-in-out;
     }
-    .custom-floating-btn:hover {
+    .btn-style:hover {
         background-color: #f3f4f6;
         border-color: #000000;
-        transform: translateY(-2px);
     }
     </style>
 
-    <div class="floating-container">
-        <button class="custom-floating-btn" onclick="startVoiceRecognition()">🎙</button>
-        <button class="custom-floating-btn" onclick="toggleAmharicPrompt()">አ</button>
+    <div class="floating-group">
+        <button class="btn-style" id="voiceBtn">🎙</button>
+        <button class="btn-style" id="amharicBtn">አ</button>
     </div>
 
     <script>
-    function startVoiceRecognition() {
-        var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        if (!SpeechRecognition) {
-            alert('Speech Recognition is not supported by your browser. Please use Chrome or Edge.');
+    document.getElementById('voiceBtn').onclick = function() {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            alert("Microphone access is blocked or unsupported by this browser.");
             return;
         }
 
-        var recognition = new SpeechRecognition();
-        recognition.continuous = false;
-        recognition.interimResults = false;
-        recognition.lang = 'en-US';
+        navigator.mediaDevices.getUserMedia({ audio: true })
+            .then(function(stream) {
+                var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                if (!SpeechRecognition) {
+                    alert('Speech Recognition unsupported in this browser. Use Chrome or Edge.');
+                    return;
+                }
 
-        recognition.onstart = function() {
-            console.log('Voice recognition activated.');
-        };
+                var recognition = new SpeechRecognition();
+                recognition.continuous = false;
+                recognition.interimResults = false;
+                recognition.lang = 'en-US';
 
-        recognition.onresult = function(event) {
-            var transcript = event.results[0][0].transcript;
-            var targetDocument = window.parent.document;
-            var chatInput = targetDocument.querySelector('textarea[data-testid="stChatInputTextArea"]');
+                recognition.onresult = function(event) {
+                    var text = event.results[0][0].transcript;
+                    var parentDoc = window.parent.document;
+                    var chatInput = parentDoc.querySelector('textarea[data-testid="stChatInputTextArea"]');
+                    if (chatInput) {
+                        chatInput.value = text;
+                        chatInput.dispatchEvent(new Event('input', { bubbles: true }));
+                        chatInput.focus();
+                    }
+                    stream.getTracks().forEach(track => track.stop());
+                };
 
-            if (chatInput) {
-                chatInput.value = transcript;
-                chatInput.dispatchEvent(new Event('input', { bubbles: true }));
-                chatInput.focus();
-            } else {
-                alert('Speech recorded: ' + transcript);
-            }
-        };
+                recognition.onerror = function(err) {
+                    alert('Voice recognition note: ' + err.error);
+                    stream.getTracks().forEach(track => track.stop());
+                };
 
-        recognition.onerror = function(event) {
-            alert('Speech recognition error: ' + event.error);
-        };
+                recognition.start();
+            })
+            .catch(function(err) {
+                alert("Microphone permission denied: " + err.message);
+            });
+    };
 
-        recognition.start();
-    }
-
-    function toggleAmharicPrompt() {
-        var targetDocument = window.parent.document;
-        var chatInput = targetDocument.querySelector('textarea[data-testid="stChatInputTextArea"]');
+    document.getElementById('amharicBtn').onclick = function() {
+        var parentDoc = window.parent.document;
+        var chatInput = parentDoc.querySelector('textarea[data-testid="stChatInputTextArea"]');
         if (chatInput) {
             chatInput.placeholder = "በአማርኛ ይጠይቁ... (Ask in Amharic...)";
             chatInput.focus();
         }
-        alert("Language mode set to Amharic (አማርኛ). You can now type or dictate in Amharic!");
-    }
+        alert("Language set to Amharic (አማርኛ). Type your query below!");
+    };
     </script>
     """,
-    height=80,
+    height=60,
 )
