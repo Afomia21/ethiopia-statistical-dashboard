@@ -98,7 +98,7 @@ def ask_groq(client: Groq, query: str, context_chunks: list) -> str:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            model="openai/gpt-oss-20b",  # <--- ACTIVE WORKING MODEL
+            model="llama-3.1-8b-instant",  # Updated to active Groq production model ID
             temperature=0.2
         )
         return response.choices[0].message.content
@@ -124,31 +124,30 @@ def save_to_cache(query: str, answer: str, route: str, src_doc: str, src_page: s
     st.session_state.query_cache[query] = (answer, route, src_doc, src_page)
 
 def process_and_index_pdf(uploaded_file, collection):
-    """Processes dynamic PDF uploads directly from chat_input."""
+    """Processes dynamic PDF uploads safely directly from chat_input."""
     session_key = f"uploaded_{uploaded_file.name}"
     if session_key not in st.session_state:
         with st.spinner(f"Ingesting uploaded document '{uploaded_file.name}'..."):
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
-                tmp_file.write(uploaded_file.getvalue())
-                tmp_path = tmp_file.name
+            try:
+                doc = fitz.open(stream=uploaded_file.getvalue(), filetype="pdf")
+                chunks, metadatas, ids = [], [], []
 
-            doc = fitz.open(tmp_path)
-            chunks, metadatas, ids = [], [], []
+                for page_num in range(len(doc)):
+                    text = doc[page_num].get_text("text").strip()
+                    if text:
+                        chunks.append(text)
+                        metadatas.append({"source": uploaded_file.name, "page": page_num + 1})
+                        # Generate unique IDs to prevent duplicate insertion errors
+                        ids.append(f"upload_{uploaded_file.name}_p{page_num + 1}_{os.urandom(4).hex()}")
 
-            for page_num in range(len(doc)):
-                text = doc[page_num].get_text("text").strip()
-                if text:
-                    chunks.append(text)
-                    metadatas.append({"source": uploaded_file.name, "page": page_num + 1})
-                    ids.append(f"upload_{uploaded_file.name}_p{page_num + 1}")
+                doc.close()
 
-            doc.close()
-            os.remove(tmp_path)
-
-            if chunks and collection:
-                collection.add(documents=chunks, metadatas=metadatas, ids=ids)
-                st.session_state[session_key] = True
-                st.toast(f"✅ Indexed '{uploaded_file.name}' successfully!")
+                if chunks and collection:
+                    collection.add(documents=chunks, metadatas=metadatas, ids=ids)
+                    st.session_state[session_key] = True
+                    st.toast(f"✅ Indexed '{uploaded_file.name}' successfully!")
+            except Exception as e:
+                st.error(f"Error indexing PDF: {e}")
 
 # Initialize ChromaDB connection
 pdf_collection = get_pdf_collection()
