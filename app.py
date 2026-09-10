@@ -81,6 +81,7 @@ def get_pdf_collection():
         st.warning(f"ChromaDB connection note: {e}")
     DB_READY = False
     return None
+
 def ask_groq(client: Groq, query: str, context_chunks: list) -> str:
     """Generates a grounded response using the Groq LLM API."""
     context_text = "\n\n".join(context_chunks)
@@ -97,7 +98,7 @@ def ask_groq(client: Groq, query: str, context_chunks: list) -> str:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            model="openai/gpt-oss-20b",  # <--- ACTIVE WORKING MODEL
+            model="llama-3.3-70b-versatile",
             temperature=0.2
         )
         return response.choices[0].message.content
@@ -116,7 +117,8 @@ def save_chat(username: str, query: str, answer: str, source_type: str):
 def get_cached_answer(query: str):
     cache = st.session_state.get("query_cache", {})
     return cache.get(query)
-    def save_to_cache(query: str, answer: str, route: str, src_doc: str, src_page: str):
+
+def save_to_cache(query: str, answer: str, route: str, src_doc: str, src_page: str):
     if "query_cache" not in st.session_state:
         st.session_state.query_cache = {}
     st.session_state.query_cache[query] = (answer, route, src_doc, src_page)
@@ -177,7 +179,7 @@ with st.sidebar:
                 else:
                     st.error("Please enter both username and password.")
     else:
-        st.write(f"Logged in as: {st.session_state.username}")
+        st.write(f"Logged in as: **{st.session_state.username}**")
         if st.button("Logout"):
             st.session_state.authenticated = False
             st.session_state.username = "guest"
@@ -203,11 +205,12 @@ with st.sidebar:
             q_text = item[0]
             a_text = item[1]
             with st.expander(f"❓ {q_text[:30]}..."):
-                st.write(f"Q: {q_text}")
-                st.write(f"A: {a_text}")
+                st.write(f"**Q:** {q_text}")
+                st.write(f"**A:** {a_text}")
     else:
         st.caption("No previous questions found.")
-    # ==============================================================================
+
+# ==============================================================================
 # 4. MAIN INTERFACE & CHAT CONSOLE
 # ==============================================================================
 if not WIDGET_MODE:
@@ -271,7 +274,7 @@ with center_col:
                     save_to_cache(user_query, answer, "pdf", "", "")
 
             st.session_state.chat_history.append((user_query, answer))
-            st.markdown(f"Answer: {answer}")
+            st.markdown(f"**Answer:** {answer}")
 
 # ==============================================================================
 # 5. FLOATING BUTTONS PINNED TO BOTTOM RIGHT
@@ -284,4 +287,4 @@ st.markdown(
     </div>
     """,
     unsafe_allow_html=True,
-)    
+)
