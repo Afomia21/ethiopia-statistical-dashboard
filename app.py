@@ -18,11 +18,11 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Force the fixed bottom chat container to center horizontally
+# Center the chat input bar horizontally
 st.markdown(
     """
     <style>
-    /* Force the fixed bottom container to center relative to screen width */
+    /* Fixed bottom container centered relative to screen width */
     div[data-testid="stBottom"] {
         position: fixed !important;
         bottom: 20px !important;
@@ -35,7 +35,7 @@ st.markdown(
         z-index: 999990 !important;
     }
 
-    /* Ensure inner layout inside stBottom respects centered bounds */
+    /* Inner layout inside stBottom */
     div[data-testid="stBottom"] > div {
         width: 100% !important;
         max-width: 720px !important;
@@ -81,8 +81,7 @@ def get_pdf_collection():
     return None
 
 def ask_groq(client: Groq, query: str, context_chunks: list) -> str:
-    """Generates a high-speed grounded response using active Groq LLM API."""
-    # Concatenate top chunks up to a reasonable limit for low latency
+    """Generates a high-speed response using an active Groq LLM model."""
     context_text = "\n\n".join(context_chunks[:3])
     lang_instruction = "Respond in Amharic if the question is asked in Amharic." if st.session_state.amharic_mode else ""
     
@@ -100,8 +99,8 @@ def ask_groq(client: Groq, query: str, context_chunks: list) -> str:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            # Fast active model: llama-3.3-70b-versatile or llama3-8b-8192
-            model="llama-3.3-70b-versatile",
+            # Updated to standard, high-speed active model
+            model="llama3-8b-8192",
             temperature=0.1,
             max_tokens=1024
         )
@@ -258,7 +257,6 @@ if chat_input_response:
             docs = []
 
             if pdf_collection:
-                # Query top 3 chunks for faster processing speed
                 res = pdf_collection.query(query_texts=[user_query], n_results=3)
                 docs = res.get("documents", [[]])[0]
 
