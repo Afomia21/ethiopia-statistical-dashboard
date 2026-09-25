@@ -9,7 +9,7 @@ from chromadb.utils import embedding_functions
 from groq import Groq
 
 # ==============================================================================
-# 1. PAGE CONFIG & CUSTOM STYLES
+# 1. PAGE CONFIG & STYLES
 # ==============================================================================
 st.set_page_config(
     page_title="ESS AI Buddy",
@@ -18,11 +18,10 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for layout structure
+# Custom header CSS
 st.markdown(
     """
     <style>
-    /* ESS AI Buddy header box dimensions match chat input width */
     .ess-bot-header {
         display: flex;
         align-items: center;
@@ -65,7 +64,7 @@ if "chat_history" not in st.session_state:
 if "amharic_mode" not in st.session_state:
     st.session_state.amharic_mode = False
 
-# Handle Amharic toggle triggered from URL query parameter
+# Query parameter listener for state changes
 if "toggle_amharic" in st.query_params:
     st.session_state.amharic_mode = not st.session_state.amharic_mode
     st.query_params.clear()
@@ -94,22 +93,21 @@ def get_pdf_collection():
     return None, False
 
 def ask_groq(client: Groq, query: str, context_chunks: list, force_amharic: bool = False) -> str:
-    """Generates a grounded response using the Groq LLM API with strict language rules."""
-    context_text = "\n\n".join(context_chunks)
+    """Generates a grounded response using supported Groq LLM API models."""
+    context_text = "\n\n".join(context_chunks) if context_chunks else "No relevant document context found."
     
     if force_amharic:
         system_prompt = (
             "You are an expert AI assistant for the Ethiopia Statistical Service (ESS).\n"
             "STRICT LANGUAGE DIRECTIVE: You MUST answer strictly, entirely, and fluently in Amharic (አማርኛ).\n"
             "Do NOT use English words unless they are official technical acronyms.\n"
-            "Answer the user query strictly based on the provided context below.\n"
-            "If the answer cannot be determined from the context, state that clearly in Amharic."
+            "Answer the user query strictly based on the context provided."
         )
-        user_prompt = f"Context:\n{context_text}\n\nQuery (Answer in Amharic): {query}"
+        user_prompt = f"Context:\n{context_text}\n\nQuery (Answer strictly in Amharic): {query}"
     else:
         system_prompt = (
             "You are an expert AI assistant for the Ethiopia Statistical Service (ESS).\n"
-            "Answer the user query strictly based on the provided context below.\n"
+            "Answer the user query strictly based on the provided context.\n"
             "If asked in Amharic, respond strictly in Amharic. If asked in English, respond in English."
         )
         user_prompt = f"Context:\n{context_text}\n\nQuery: {query}"
@@ -120,7 +118,7 @@ def ask_groq(client: Groq, query: str, context_chunks: list, force_amharic: bool
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            model="llama-3.3-70b-versatile",
+            model="llama-3.1-70b-versatile",  # Fixed active model endpoint
             temperature=0.2
         )
         return response.choices[0].message.content
@@ -257,7 +255,7 @@ with center_col:
             unsafe_allow_html=True,
         )
 
-    # Render previous messages inside center column
+    # Render previous messages
     for user_q, bot_a in st.session_state.chat_history:
         with st.chat_message("user"):
             st.write(user_q)
@@ -299,7 +297,7 @@ with center_col:
                         res = pdf_collection.query(query_texts=[user_query], n_results=5)
                         docs = res.get("documents", [[]])[0]
 
-                    if client and docs:
+                    if client:
                         answer = ask_groq(
                             client, 
                             user_query, 
@@ -320,118 +318,127 @@ with center_col:
                 st.session_state.chat_history.append((user_query, answer))
 
 # ==============================================================================
-# 5. FLOATING BUTTONS PINNED EXACTLY AT BOTTOM RIGHT
+# 5. FLOATING DOCK ANCHORED AT BOTTOM-RIGHT
 # ==============================================================================
 amharic_bg = "#1a365d" if st.session_state.amharic_mode else "#ffffff"
 amharic_color = "#ffffff" if st.session_state.amharic_mode else "#000000"
 
 st.components.v1.html(
     f"""
-    <div style="
-        position: fixed;
-        bottom: 20px;
-        right: 30px;
-        z-index: 9999999;
-        display: flex;
-        gap: 10px;
-        align-items: center;
-    ">
-        <button id="amharicBtn" style="
-            background-color: {amharic_bg};
-            color: {amharic_color};
-            border: 1px solid #d0d7de;
-            border-radius: 8px;
-            width: 44px;
-            height: 44px;
-            font-size: 18px;
-            font-weight: bold;
-            cursor: pointer;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.15);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.2s ease-in-out;
-        " title="Toggle Amharic Mode">አ</button>
-
-        <button id="micBtn" style="
-            background-color: #ffffff;
-            color: #000000;
-            border: 1px solid #d0d7de;
-            border-radius: 8px;
-            width: 44px;
-            height: 44px;
-            font-size: 18px;
-            cursor: pointer;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.15);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.2s ease-in-out;
-        " title="Voice Input">🎙</button>
-    </div>
-
     <script>
-    const micBtn = document.getElementById('micBtn');
-    const amharicBtn = document.getElementById('amharicBtn');
-    let recognition;
-    let isListening = false;
+    (function() {{
+        const parentDoc = window.parent.document;
+        let floatContainer = parentDoc.getElementById('ess-floating-dock');
+        
+        if (!floatContainer) {{
+            floatContainer = parentDoc.createElement('div');
+            floatContainer.id = 'ess-floating-dock';
+            floatContainer.style.cssText = `
+                position: fixed !important;
+                bottom: 25px !important;
+                right: 30px !important;
+                z-index: 9999999 !important;
+                display: flex !important;
+                gap: 10px !important;
+                align-items: center !important;
+            `;
+            parentDoc.body.appendChild(floatContainer);
+        }}
 
-    // 1. AMHARIC MODE TOGGLE
-    amharicBtn.onclick = function() {{
-        const url = new URL(window.parent.location.href);
-        url.searchParams.set('toggle_amharic', 'true');
-        window.parent.location.href = url.href;
-    }};
+        floatContainer.innerHTML = `
+            <button id="dockAmharicBtn" style="
+                background-color: {amharic_bg};
+                color: {amharic_color};
+                border: 1px solid #d0d7de;
+                border-radius: 8px;
+                width: 44px;
+                height: 44px;
+                font-size: 18px;
+                font-weight: bold;
+                cursor: pointer;
+                box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            " title="Toggle Amharic Mode">አ</button>
 
-    // 2. VOICE INPUT SPEECH RECOGNITION
-    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {{
-        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        recognition = new SpeechRecognition();
-        recognition.continuous = false;
-        recognition.interimResults = false;
-        recognition.lang = 'am-ET';
+            <button id="dockMicBtn" style="
+                background-color: #ffffff;
+                color: #000000;
+                border: 1px solid #d0d7de;
+                border-radius: 8px;
+                width: 44px;
+                height: 44px;
+                font-size: 18px;
+                cursor: pointer;
+                box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            " title="Voice Input">🎙</button>
+        `;
 
-        recognition.onstart = function() {{
-            isListening = true;
-            micBtn.style.backgroundColor = '#ff4b4b';
-            micBtn.style.color = '#ffffff';
+        const amharicBtn = floatContainer.querySelector('#dockAmharicBtn');
+        const micBtn = floatContainer.querySelector('#dockMicBtn');
+
+        amharicBtn.onclick = function() {{
+            const url = new URL(window.parent.location.href);
+            url.searchParams.set('toggle_amharic', 'true');
+            window.parent.location.href = url.href;
         }};
 
-        recognition.onresult = function(event) {{
-            const transcript = event.results[0][0].transcript;
-            const chatInputs = window.parent.document.querySelectorAll('textarea[data-testid="stChatInputTextArea"]');
-            if (chatInputs.length > 0) {{
-                chatInputs[0].value = transcript;
-                chatInputs[0].dispatchEvent(new Event('input', {{ bubbles: true }}));
-            }}
-        }};
+        let recognition;
+        let isListening = false;
 
-        recognition.onerror = function(event) {{
-            console.error("Speech Recognition Error:", event.error);
-            isListening = false;
-            micBtn.style.backgroundColor = '#ffffff';
-            micBtn.style.color = '#000000';
-        }};
+        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {{
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            recognition = new SpeechRecognition();
+            recognition.continuous = false;
+            recognition.interimResults = false;
+            recognition.lang = 'am-ET';
 
-        recognition.onend = function() {{
-            isListening = false;
-            micBtn.style.backgroundColor = '#ffffff';
-            micBtn.style.color = '#000000';
-        }};
+            recognition.onstart = function() {{
+                isListening = true;
+                micBtn.style.backgroundColor = '#ff4b4b';
+                micBtn.style.color = '#ffffff';
+            }};
 
-        micBtn.onclick = function() {{
-            if (isListening) {{
-                recognition.stop();
-            }} else {{
-                recognition.start();
-            }}
-        }};
-    }} else {{
-        micBtn.onclick = function() {{
-            alert('Voice recognition is not supported on this browser. Please use Chrome or Edge.');
-        }};
-    }}
+            recognition.onresult = function(event) {{
+                const transcript = event.results[0][0].transcript;
+                const chatInputs = parentDoc.querySelectorAll('textarea[data-testid="stChatInputTextArea"]');
+                if (chatInputs.length > 0) {{
+                    chatInputs[0].value = transcript;
+                    chatInputs[0].dispatchEvent(new Event('input', {{ bubbles: true }}));
+                }}
+            }};
+
+            recognition.onerror = function() {{
+                isListening = false;
+                micBtn.style.backgroundColor = '#ffffff';
+                micBtn.style.color = '#000000';
+            }};
+
+            recognition.onend = function() {{
+                isListening = false;
+                micBtn.style.backgroundColor = '#ffffff';
+                micBtn.style.color = '#000000';
+            }};
+
+            micBtn.onclick = function() {{
+                if (isListening) {{
+                    recognition.stop();
+                }} else {{
+                    recognition.start();
+                }}
+            }};
+        }} else {{
+            micBtn.onclick = function() {{
+                alert('Voice recognition requires Chrome or Edge.');
+            }};
+        }}
+    }})();
     </script>
     """,
-    height=80,
+    height=0,
+    width=0
 )
