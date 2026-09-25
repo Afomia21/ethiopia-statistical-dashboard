@@ -18,11 +18,11 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Inject CSS directly into the main parent document to fix button alignment
+# Custom CSS for layout structure
 st.markdown(
     """
     <style>
-    /* Header layout matching chat input box width */
+    /* ESS AI Buddy header box dimensions match chat input width */
     .ess-bot-header {
         display: flex;
         align-items: center;
@@ -47,38 +47,6 @@ st.markdown(
         font-size: 13px;
         color: #6c757d;
         margin: 0;
-    }
-
-    /* Fixed Floating Buttons in Main Window */
-    .floating-button-wrapper {
-        position: fixed;
-        bottom: 30px;
-        right: 35px;
-        z-index: 999999;
-        display: flex;
-        gap: 12px;
-    }
-
-    .custom-floating-btn {
-        background-color: #ffffff;
-        color: #000000;
-        border: 1px solid #d0d7de;
-        border-radius: 10px;
-        width: 48px;
-        height: 48px;
-        font-size: 20px;
-        font-weight: bold;
-        cursor: pointer;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.18);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        transition: all 0.2s ease-in-out;
-    }
-
-    .custom-floating-btn:hover {
-        background-color: #f3f4f6;
-        transform: translateY(-2px);
     }
     </style>
     """,
@@ -126,24 +94,25 @@ def get_pdf_collection():
     return None, False
 
 def ask_groq(client: Groq, query: str, context_chunks: list, force_amharic: bool = False) -> str:
-    """Generates a grounded response using the Groq LLM API."""
+    """Generates a grounded response using the Groq LLM API with strict language rules."""
     context_text = "\n\n".join(context_chunks)
     
-    is_amharic = force_amharic or "አማርኛ" in query or "በአማርኛ" in query
-    
-    language_directive = (
-        "Respond STRICTLY and FLUENTLY in Amharic (አማርኛ)."
-        if is_amharic else
-        "Respond in the same language as the user's query."
-    )
-
-    system_prompt = (
-        "You are an expert AI assistant for the Ethiopia Statistical Service (ESS).\n"
-        "Answer the user query strictly based on the provided context below.\n"
-        "If the answer cannot be determined from the context, state that clearly.\n"
-        f"LANGUAGE DIRECTIVE: {language_directive}"
-    )
-    user_prompt = f"Context:\n{context_text}\n\nQuery: {query}"
+    if force_amharic:
+        system_prompt = (
+            "You are an expert AI assistant for the Ethiopia Statistical Service (ESS).\n"
+            "STRICT LANGUAGE DIRECTIVE: You MUST answer strictly, entirely, and fluently in Amharic (አማርኛ).\n"
+            "Do NOT use English words unless they are official technical acronyms.\n"
+            "Answer the user query strictly based on the provided context below.\n"
+            "If the answer cannot be determined from the context, state that clearly in Amharic."
+        )
+        user_prompt = f"Context:\n{context_text}\n\nQuery (Answer in Amharic): {query}"
+    else:
+        system_prompt = (
+            "You are an expert AI assistant for the Ethiopia Statistical Service (ESS).\n"
+            "Answer the user query strictly based on the provided context below.\n"
+            "If asked in Amharic, respond strictly in Amharic. If asked in English, respond in English."
+        )
+        user_prompt = f"Context:\n{context_text}\n\nQuery: {query}"
 
     try:
         response = client.chat.completions.create(
@@ -240,7 +209,7 @@ with st.sidebar:
 
     st.markdown("---")
     st.subheader("⚙️ Language Status")
-    status_label = "ENABLED 🟢" if st.session_state.amharic_mode else "DISABLED ⚪"
+    status_label = "ACTIVE 🟢 (አማርኛ)" if st.session_state.amharic_mode else "OFF ⚪ (ENGLISH)"
     st.write(f"Amharic Mode: **{status_label}**")
 
     st.markdown("---")
@@ -288,7 +257,7 @@ with center_col:
             unsafe_allow_html=True,
         )
 
-    # Render previous messages
+    # Render previous messages inside center column
     for user_q, bot_a in st.session_state.chat_history:
         with st.chat_message("user"):
             st.write(user_q)
@@ -351,41 +320,53 @@ with center_col:
                 st.session_state.chat_history.append((user_query, answer))
 
 # ==============================================================================
-# 5. VISIBLE FLOATING BUTTONS PINNED TO BOTTOM RIGHT
+# 5. FLOATING BUTTONS PINNED EXACTLY AT BOTTOM RIGHT
 # ==============================================================================
-amharic_style = "background-color: #1a365d; color: #ffffff;" if st.session_state.amharic_mode else "background-color: #ffffff; color: #000000;"
+amharic_bg = "#1a365d" if st.session_state.amharic_mode else "#ffffff"
+amharic_color = "#ffffff" if st.session_state.amharic_mode else "#000000"
 
 st.components.v1.html(
     f"""
-    <div style="position: fixed; bottom: 30px; right: 35px; z-index: 999999; display: flex; gap: 12px;">
+    <div style="
+        position: fixed;
+        bottom: 20px;
+        right: 30px;
+        z-index: 9999999;
+        display: flex;
+        gap: 10px;
+        align-items: center;
+    ">
         <button id="amharicBtn" style="
-            {amharic_style}
+            background-color: {amharic_bg};
+            color: {amharic_color};
             border: 1px solid #d0d7de;
-            border-radius: 10px;
-            width: 48px;
-            height: 48px;
-            font-size: 20px;
+            border-radius: 8px;
+            width: 44px;
+            height: 44px;
+            font-size: 18px;
             font-weight: bold;
             cursor: pointer;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.18);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.15);
             display: flex;
             align-items: center;
             justify-content: center;
+            transition: all 0.2s ease-in-out;
         " title="Toggle Amharic Mode">አ</button>
 
         <button id="micBtn" style="
             background-color: #ffffff;
             color: #000000;
             border: 1px solid #d0d7de;
-            border-radius: 10px;
-            width: 48px;
-            height: 48px;
-            font-size: 20px;
+            border-radius: 8px;
+            width: 44px;
+            height: 44px;
+            font-size: 18px;
             cursor: pointer;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.18);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.15);
             display: flex;
             align-items: center;
             justify-content: center;
+            transition: all 0.2s ease-in-out;
         " title="Voice Input">🎙</button>
     </div>
 
@@ -395,14 +376,14 @@ st.components.v1.html(
     let recognition;
     let isListening = false;
 
-    // 1. Amharic Mode Trigger
+    // 1. AMHARIC MODE TOGGLE
     amharicBtn.onclick = function() {{
         const url = new URL(window.parent.location.href);
         url.searchParams.set('toggle_amharic', 'true');
         window.parent.location.href = url.href;
     }};
 
-    // 2. Web Speech Audio Microphone
+    // 2. VOICE INPUT SPEECH RECOGNITION
     if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {{
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         recognition = new SpeechRecognition();
@@ -418,15 +399,15 @@ st.components.v1.html(
 
         recognition.onresult = function(event) {{
             const transcript = event.results[0][0].transcript;
-            const textAreas = window.parent.document.querySelectorAll('textarea[data-testid="stChatInputTextArea"]');
-            if (textAreas.length > 0) {{
-                textAreas[0].value = transcript;
-                textAreas[0].dispatchEvent(new Event('input', {{ bubbles: true }}));
+            const chatInputs = window.parent.document.querySelectorAll('textarea[data-testid="stChatInputTextArea"]');
+            if (chatInputs.length > 0) {{
+                chatInputs[0].value = transcript;
+                chatInputs[0].dispatchEvent(new Event('input', {{ bubbles: true }}));
             }}
         }};
 
         recognition.onerror = function(event) {{
-            console.error("Speech error:", event.error);
+            console.error("Speech Recognition Error:", event.error);
             isListening = false;
             micBtn.style.backgroundColor = '#ffffff';
             micBtn.style.color = '#000000';
@@ -447,10 +428,10 @@ st.components.v1.html(
         }};
     }} else {{
         micBtn.onclick = function() {{
-            alert('Voice speech recognition is not supported on this browser. Please use Google Chrome or Microsoft Edge.');
+            alert('Voice recognition is not supported on this browser. Please use Chrome or Edge.');
         }};
     }}
     </script>
     """,
-    height=90,
+    height=80,
 )
