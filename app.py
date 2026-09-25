@@ -9,7 +9,7 @@ from chromadb.utils import embedding_functions
 from groq import Groq
 
 # ==============================================================================
-# 1. PAGE CONFIG & FIXED FLOATING BUTTONS CSS
+# 1. PAGE CONFIG & CUSTOM STYLES
 # ==============================================================================
 st.set_page_config(
     page_title="ESS AI Buddy",
@@ -18,44 +18,52 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for fixed bottom-right floating buttons
+# Custom CSS for chat header and general UI alignment
 st.markdown(
     """
     <style>
-    .floating-button-wrapper {
-        position: fixed;
-        bottom: 30px;
-        right: 30px;
-        z-index: 999999;
+    .ess-bot-header {
         display: flex;
-        gap: 12px;
+        align-items: center;
+        gap: 15px;
+        background-color: #f8f9fa;
+        padding: 15px 20px;
+        border-radius: 10px;
+        border: 1px solid #e9ecef;
+        margin-bottom: 20px;
     }
-    .custom-icon-btn {
-        background-color: #ffffff;
-        border: 1px solid #d0d7de;
-        border-radius: 8px;
-        padding: 10px 16px;
-        font-size: 18px;
-        cursor: pointer;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.15);
-        transition: all 0.2s ease-in-out;
+    .ess-bot-avatar {
+        font-size: 36px;
     }
-    .custom-icon-btn:hover {
-        background-color: #f3f4f6;
-        border-color: #000000;
-        transform: translateY(-2px);
+    .ess-bot-title {
+        font-size: 24px;
+        font-weight: bold;
+        margin: 0;
+        color: #1a365d;
+    }
+    .ess-bot-subtitle {
+        font-size: 14px;
+        color: #6c757d;
+        margin: 0;
     }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-# Environment setup
+# Environment setup & constants
 GROQ_API_KEY = st.secrets.get("GROQ_API_KEY") or os.getenv("GROQ_API_KEY")
 WIDGET_MODE = st.query_params.get("embed", "false").lower() == "true"
 DB_DIR = Path("chroma_db")
 COLLECTION_NAME = "ess_pdf_docs"
-DB_READY = False
+
+# Initialize state variables
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+if "speech_input" not in st.session_state:
+    st.session_state.speech_input = ""
+if "amharic_mode" not in st.session_state:
+    st.session_state.amharic_mode = False
 
 # ==============================================================================
 # 2. CHROMADB & HELPER FUNCTIONS
@@ -63,7 +71,6 @@ DB_READY = False
 @st.cache_resource
 def get_pdf_collection():
     """Initializes and returns the persistent ChromaDB collection."""
-    global DB_READY
     try:
         if DB_DIR.exists():
             client = PersistentClient(path=str(DB_DIR))
@@ -75,20 +82,26 @@ def get_pdf_collection():
                 name=COLLECTION_NAME,
                 embedding_function=embed_fn
             )
-            DB_READY = True
-            return collection
+            return collection, True
     except Exception as e:
-        st.warning(f"ChromaDB connection note: {e}")
-    DB_READY = False
-    return None
+        st.sidebar.warning(f"ChromaDB connection note: {e}")
+    return None, False
 
-def ask_groq(client: Groq, query: str, context_chunks: list) -> str:
-    """Generates a grounded response using the Groq LLM API."""
+def ask_groq(client: Groq, query: str, context_chunks: list, amharic_enforced: bool = False) -> str:
+    """Generates a grounded response using the Groq LLM API with language rules."""
     context_text = "\n\n".join(context_chunks)
+    
+    language_instruction = (
+        "Respond STRICTLY and FLUENTLY in Amharic (አማርኛ)." 
+        if amharic_enforced else 
+        "Detect the language of the query. If asked in Amharic, respond strictly in Amharic. If asked in English, respond in English."
+    )
+
     system_prompt = (
         "You are an expert AI assistant for the Ethiopia Statistical Service (ESS).\n"
         "Answer the user query strictly based on the provided context below.\n"
-        "If the answer cannot be determined from the context, state that clearly."
+        "If the answer cannot be determined from the context, state that clearly.\n"
+        f"LANGUAGE DIRECTIVE: {language_instruction}"
     )
     user_prompt = f"Context:\n{context_text}\n\nQuery: {query}"
 
@@ -98,7 +111,7 @@ def ask_groq(client: Groq, query: str, context_chunks: list) -> str:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            model="openai/gpt-oss-20b",  # <--- ACTIVE WORKING MODEL
+            model="llama-3.3-70b-versatile",
             temperature=0.2
         )
         return response.choices[0].message.content
@@ -117,6 +130,7 @@ def save_chat(username: str, query: str, answer: str, source_type: str):
 def get_cached_answer(query: str):
     cache = st.session_state.get("query_cache", {})
     return cache.get(query)
+
 def save_to_cache(query: str, answer: str, route: str, src_doc: str, src_page: str):
     if "query_cache" not in st.session_state:
         st.session_state.query_cache = {}
@@ -150,7 +164,7 @@ def process_and_index_pdf(uploaded_file, collection):
                 st.toast(f"✅ Indexed '{uploaded_file.name}' successfully!")
 
 # Initialize ChromaDB connection
-pdf_collection = get_pdf_collection()
+pdf_collection, DB_READY = get_pdf_collection()
 
 # ==============================================================================
 # 3. SIDEBAR: USER AUTHENTICATION & CHAT HISTORY
@@ -178,11 +192,16 @@ with st.sidebar:
                 else:
                     st.error("Please enter both username and password.")
     else:
-        st.write(f"Logged in as: {st.session_state.username}")
+        st.write(f"Logged in as: **{st.session_state.username}**")
         if st.button("Logout"):
             st.session_state.authenticated = False
             st.session_state.username = "guest"
             st.rerun()
+
+    st.markdown("---")
+    st.subheader("⚙️ Language Settings")
+    amharic_toggle = st.toggle("Force Amharic Mode (አማርኛ)", value=st.session_state.amharic_mode)
+    st.session_state.amharic_mode = amharic_toggle
 
     st.markdown("---")
     st.subheader("📜 Chat History")
@@ -204,10 +223,11 @@ with st.sidebar:
             q_text = item[0]
             a_text = item[1]
             with st.expander(f"❓ {q_text[:30]}..."):
-                st.write(f"Q: {q_text}")
-                st.write(f"A: {a_text}")
+                st.write(f"**Q:** {q_text}")
+                st.write(f"**A:** {a_text}")
     else:
         st.caption("No previous questions found.")
+
 # ==============================================================================
 # 4. MAIN INTERFACE & CHAT CONSOLE
 # ==============================================================================
@@ -218,71 +238,162 @@ if not WIDGET_MODE:
             <div class="ess-bot-avatar">🤖</div>
             <div>
                 <p class="ess-bot-title">ESS AI Buddy</p>
-                <p class="ess-bot-subtitle">Ethiopia Statistical Service · your friendly stats assistant</p>
+                <p class="ess-bot-subtitle">Ethiopia Statistical Service · Your Friendly Stats Assistant</p>
             </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
+# Render past chat logs in the chat interface
+for user_q, bot_a in st.session_state.chat_history:
+    with st.chat_message("user"):
+        st.write(user_q)
+    with st.chat_message("assistant"):
+        st.write(bot_a)
 
-left_pad, center_col, right_pad = st.columns([1, 2, 1])
+# Dynamic voice-transcription callback query insertion
+initial_prompt = st.session_state.speech_input if st.session_state.speech_input else None
+
+left_pad, center_col, right_pad = st.columns([1, 10, 1])
 
 with center_col:
-    chat_input_response = st.chat_input("Ask ESS AI Assistant...", accept_file=True)
+    chat_input_response = st.chat_input("Ask ESS AI Assistant...", accept_file=True, key="main_chat_input")
 
-    if chat_input_response:
+    # Override query if speech input was recently captured
+    user_query = ""
+    uploaded_files = []
+
+    if initial_prompt and not chat_input_response:
+        user_query = initial_prompt
+        st.session_state.speech_input = ""  # Reset speech buffer
+    elif chat_input_response:
         if isinstance(chat_input_response, str):
             user_query = chat_input_response
-            uploaded_files = []
         else:
             user_query = getattr(chat_input_response, "text", "")
             uploaded_files = getattr(chat_input_response, "files", [])
 
-        if uploaded_files and pdf_collection:
-            for file_obj in uploaded_files:
-                if file_obj.name.lower().endswith(".pdf"):
-                    process_and_index_pdf(file_obj, pdf_collection)
+    if uploaded_files and pdf_collection:
+        for file_obj in uploaded_files:
+            if file_obj.name.lower().endswith(".pdf"):
+                process_and_index_pdf(file_obj, pdf_collection)
 
-        if user_query:
-            cached_res = get_cached_answer(user_query) if DB_READY else None
+    if user_query:
+        with st.chat_message("user"):
+            st.write(user_query)
 
-            if cached_res:
-                answer, route, src_doc, src_page = cached_res
-            else:
-                client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
-                docs = []
+        with st.chat_message("assistant"):
+            with st.spinner("Analyzing document knowledge base..."):
+                cached_res = get_cached_answer(user_query) if DB_READY else None
 
-                if pdf_collection:
-                    res = pdf_collection.query(query_texts=[user_query], n_results=5)
-                    docs = res.get("documents", [[]])[0]
-
-                if client and docs:
-                    answer = ask_groq(client, user_query, docs)
-                elif not GROQ_API_KEY:
-                    answer = "Error: GROQ_API_KEY is missing."
+                if cached_res:
+                    answer, route, src_doc, src_page = cached_res
                 else:
-                    answer = "I couldn't locate specific information on that in the documents or tables."
+                    client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
+                    docs = []
 
-                if DB_READY:
-                    current_user = st.session_state.get("username", "guest")
-                    save_chat(current_user, user_query, answer, "pdf")
-                    save_to_cache(user_query, answer, "pdf", "", "")
+                    if pdf_collection:
+                        res = pdf_collection.query(query_texts=[user_query], n_results=5)
+                        docs = res.get("documents", [[]])[0]
 
-            st.session_state.chat_history.append((user_query, answer))
-            st.markdown(f"Answer: {answer}")
+                    if client and docs:
+                        answer = ask_groq(client, user_query, docs, amharic_enforced=st.session_state.amharic_mode)
+                    elif not GROQ_API_KEY:
+                        answer = "Error: GROQ_API_KEY is missing."
+                    else:
+                        answer = "I couldn't locate specific information on that in the documents or tables."
+
+                    if DB_READY:
+                        current_user = st.session_state.get("username", "guest")
+                        save_chat(current_user, user_query, answer, "pdf")
+                        save_to_cache(user_query, answer, "pdf", "", "")
+
+                st.write(answer)
+                st.session_state.chat_history.append((user_query, answer))
 
 # ==============================================================================
-# 5. FLOATING BUTTONS PINNED TO BOTTOM RIGHT
+# 5. VOICE RECORDER & AMHARIC CONTROL WIDGET (JAVASCRIPT BRIDGE)
 # ==============================================================================
-st.markdown(
+st.components.v1.html(
     """
-    <div class="floating-button-wrapper">
-        <button class="custom-icon-btn" onclick="alert('Mic clicked')">🎙</button>
-        <button class="custom-icon-btn" onclick="alert('Amharic clicked')">አ</button>
+    <div style="position: fixed; bottom: 20px; right: 20px; z-index: 999999; display: flex; gap: 10px;">
+        <button id="micBtn" style="
+            background-color: #ffffff;
+            border: 1px solid #d0d7de;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            font-size: 22px;
+            cursor: pointer;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+            transition: all 0.2s ease-in-out;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        " title="Click to speak (Amharic / English)">🎙️</button>
     </div>
+
+    <script>
+    const micBtn = document.getElementById('micBtn');
+    let recognition;
+    let isListening = false;
+
+    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        recognition = new SpeechRecognition();
+        recognition.continuous = false;
+        recognition.interimResults = false;
+        recognition.lang = 'am-ET'; // Defaults to Amharic speech recognition
+
+        recognition.onstart = function() {
+            isListening = true;
+            micBtn.style.backgroundColor = '#ff4b4b';
+            micBtn.style.color = '#ffffff';
+        };
+
+        recognition.onresult = function(event) {
+            const transcript = event.results[0][0].transcript;
+            // Write transcript to Streamlit session state via URL search parameter or text insertion
+            window.parent.postMessage({
+                type: 'streamlit:setComponentValue',
+                value: transcript
+            }, '*');
+
+            // Fallback: Populate Streamlit's native input element directly in DOM
+            const chatInputs = window.parent.document.querySelectorAll('textarea[data-testid="stChatInputTextArea"]');
+            if (chatInputs.length > 0) {
+                chatInputs[0].value = transcript;
+                chatInputs[0].dispatchEvent(new Event('input', { bubbles: true }));
+            }
+        };
+
+        recognition.onerror = function(event) {
+            console.error("Speech recognition error", event.error);
+            isListening = false;
+            micBtn.style.backgroundColor = '#ffffff';
+            micBtn.style.color = '#000000';
+        };
+
+        recognition.onend = function() {
+            isListening = false;
+            micBtn.style.backgroundColor = '#ffffff';
+            micBtn.style.color = '#000000';
+        };
+
+        micBtn.onclick = function() {
+            if (isListening) {
+                recognition.stop();
+            } else {
+                recognition.start();
+            }
+        };
+    } else {
+        micBtn.onclick = function() {
+            alert('Web Speech API is not supported in this browser. Please use Google Chrome or Microsoft Edge.');
+        };
+    }
+    </script>
     """,
-    unsafe_allow_html=True,
+    height=80,
 )
