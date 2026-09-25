@@ -18,7 +18,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for chat header and general UI alignment
+# Custom CSS for header and chat layout
 st.markdown(
     """
     <style>
@@ -57,13 +57,20 @@ WIDGET_MODE = st.query_params.get("embed", "false").lower() == "true"
 DB_DIR = Path("chroma_db")
 COLLECTION_NAME = "ess_pdf_docs"
 
-# Initialize state variables
+# Initialize session state variables
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 if "speech_input" not in st.session_state:
     st.session_state.speech_input = ""
 if "amharic_mode" not in st.session_state:
     st.session_state.amharic_mode = False
+
+# Handle Amharic toggle triggered from JavaScript floating button
+query_params = st.query_params
+if "toggle_amharic" in query_params:
+    st.session_state.amharic_mode = not st.session_state.amharic_mode
+    st.query_params.clear()
+    st.rerun()
 
 # ==============================================================================
 # 2. CHROMADB & HELPER FUNCTIONS
@@ -200,8 +207,8 @@ with st.sidebar:
 
     st.markdown("---")
     st.subheader("⚙️ Language Settings")
-    amharic_toggle = st.toggle("Force Amharic Mode (አማርኛ)", value=st.session_state.amharic_mode)
-    st.session_state.amharic_mode = amharic_toggle
+    amharic_status = "ENABLED 🟢" if st.session_state.amharic_mode else "DISABLED ⚪"
+    st.write(f"Amharic Mode: **{amharic_status}**")
 
     st.markdown("---")
     st.subheader("📜 Chat History")
@@ -245,29 +252,22 @@ if not WIDGET_MODE:
         unsafe_allow_html=True,
     )
 
-# Render past chat logs in the chat interface
+# Render chat history bubbles
 for user_q, bot_a in st.session_state.chat_history:
     with st.chat_message("user"):
         st.write(user_q)
     with st.chat_message("assistant"):
         st.write(bot_a)
 
-# Dynamic voice-transcription callback query insertion
-initial_prompt = st.session_state.speech_input if st.session_state.speech_input else None
-
 left_pad, center_col, right_pad = st.columns([1, 10, 1])
 
 with center_col:
     chat_input_response = st.chat_input("Ask ESS AI Assistant...", accept_file=True, key="main_chat_input")
 
-    # Override query if speech input was recently captured
     user_query = ""
     uploaded_files = []
 
-    if initial_prompt and not chat_input_response:
-        user_query = initial_prompt
-        st.session_state.speech_input = ""  # Reset speech buffer
-    elif chat_input_response:
+    if chat_input_response:
         if isinstance(chat_input_response, str):
             user_query = chat_input_response
         else:
@@ -313,87 +313,102 @@ with center_col:
                 st.session_state.chat_history.append((user_query, answer))
 
 # ==============================================================================
-# 5. VOICE RECORDER & AMHARIC CONTROL WIDGET (JAVASCRIPT BRIDGE)
+# 5. FLOATING BUTTONS PINNED AT BOTTOM RIGHT (VOICE & AMHARIC)
 # ==============================================================================
+amharic_bg = "#2b2b2b" if st.session_state.amharic_mode else "#ffffff"
+amharic_color = "#ffffff" if st.session_state.amharic_mode else "#000000"
+
 st.components.v1.html(
-    """
-    <div style="position: fixed; bottom: 20px; right: 20px; z-index: 999999; display: flex; gap: 10px;">
-        <button id="micBtn" style="
-            background-color: #ffffff;
+    f"""
+    <div style="position: fixed; bottom: 30px; right: 30px; z-index: 999999; display: flex; gap: 12px;">
+        <button id="amharicBtn" style="
+            background-color: {amharic_bg};
+            color: {amharic_color};
             border: 1px solid #d0d7de;
-            border-radius: 50%;
-            width: 50px;
-            height: 50px;
-            font-size: 22px;
+            border-radius: 8px;
+            padding: 10px 16px;
+            font-size: 18px;
+            font-weight: bold;
             cursor: pointer;
             box-shadow: 0 4px 10px rgba(0,0,0,0.15);
             transition: all 0.2s ease-in-out;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        " title="Click to speak (Amharic / English)">🎙️</button>
+        " title="Toggle Amharic Mode">አ</button>
+
+        <button id="micBtn" style="
+            background-color: #ffffff;
+            color: #000000;
+            border: 1px solid #d0d7de;
+            border-radius: 8px;
+            padding: 10px 16px;
+            font-size: 18px;
+            cursor: pointer;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+            transition: all 0.2s ease-in-out;
+        " title="Record Voice Input">🎙</button>
     </div>
 
     <script>
     const micBtn = document.getElementById('micBtn');
+    const amharicBtn = document.getElementById('amharicBtn');
     let recognition;
     let isListening = false;
 
-    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+    // 1. Voice Recognition Functionality
+    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {{
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         recognition = new SpeechRecognition();
         recognition.continuous = false;
         recognition.interimResults = false;
-        recognition.lang = 'am-ET'; // Defaults to Amharic speech recognition
+        recognition.lang = 'am-ET';
 
-        recognition.onstart = function() {
+        recognition.onstart = function() {{
             isListening = true;
             micBtn.style.backgroundColor = '#ff4b4b';
             micBtn.style.color = '#ffffff';
-        };
+        }};
 
-        recognition.onresult = function(event) {
+        recognition.onresult = function(event) {{
             const transcript = event.results[0][0].transcript;
-            // Write transcript to Streamlit session state via URL search parameter or text insertion
-            window.parent.postMessage({
-                type: 'streamlit:setComponentValue',
-                value: transcript
-            }, '*');
-
-            // Fallback: Populate Streamlit's native input element directly in DOM
             const chatInputs = window.parent.document.querySelectorAll('textarea[data-testid="stChatInputTextArea"]');
-            if (chatInputs.length > 0) {
+            if (chatInputs.length > 0) {{
                 chatInputs[0].value = transcript;
-                chatInputs[0].dispatchEvent(new Event('input', { bubbles: true }));
-            }
-        };
+                chatInputs[0].dispatchEvent(new Event('input', {{ bubbles: true }}));
+            }}
+        }};
 
-        recognition.onerror = function(event) {
-            console.error("Speech recognition error", event.error);
+        recognition.onerror = function(event) {{
+            console.error("Speech error:", event.error);
             isListening = false;
             micBtn.style.backgroundColor = '#ffffff';
             micBtn.style.color = '#000000';
-        };
+        }};
 
-        recognition.onend = function() {
+        recognition.onend = function() {{
             isListening = false;
             micBtn.style.backgroundColor = '#ffffff';
             micBtn.style.color = '#000000';
-        };
+        }};
 
-        micBtn.onclick = function() {
-            if (isListening) {
+        micBtn.onclick = function() {{
+            if (isListening) {{
                 recognition.stop();
-            } else {
+            }} else {{
                 recognition.start();
-            }
-        };
-    } else {
-        micBtn.onclick = function() {
-            alert('Web Speech API is not supported in this browser. Please use Google Chrome or Microsoft Edge.');
-        };
-    }
+            }}
+        }};
+    }} else {{
+        micBtn.onclick = function() {{
+            alert('Speech recognition is not supported on this browser. Please use Google Chrome or Microsoft Edge.');
+        }};
+    }}
+
+    // 2. Amharic Toggle Button Functionality
+    amharicBtn.onclick = function() {{
+        const url = new URL(window.parent.location.href);
+        url.searchParams.set('toggle_amharic', 'true');
+        window.parent.location.href = url.href;
+    }};
     </script>
     """,
-    height=80,
+    height=90,
 )
