@@ -72,10 +72,15 @@ STATS_COLLECTION = "esps_stats"
 PDF_COLLECTION = "ess_pdf_docs"
 
 # FIX: llama-3.1-70b-versatile was decommissioned by Groq (this was the bug
-# causing every question on the live app to fail). llama-3.1-8b-instant is
-# the model core.py already used successfully - kept as the single model
-# for the whole app so behavior is consistent everywhere.
-MODEL = "llama-3.1-8b-instant"
+# causing every question on the live app to fail). Its replacement,
+# llama-3.1-8b-instant, has ALSO since been moved to Enterprise-only access
+# on Groq (confirmed by the "model_not_found" error on a free/developer API
+# key) - Groq's free-tier Llama models are being retired in favor of their
+# hosted open-weight OpenAI models. openai/gpt-oss-20b is the closest match
+# to the old "fast/cheap" 8b model and is confirmed available on the free
+# tier as of this writing. Always double-check https://console.groq.com/docs/models
+# before relying on any model ID, since Groq's lineup changes frequently.
+MODEL = "openai/gpt-oss-20b"
 
 MULTILINGUAL_MODEL_NAME = "paraphrase-multilingual-MiniLM-L12-v2"
 
