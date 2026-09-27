@@ -10,7 +10,7 @@ from groq import Groq
 import streamlit.components.v1 as components
 
 # ==============================================================================
-# 1. PAGE CONFIG & SIDE-BY-SIDE FLOATING BUTTONS CSS
+# 1. PAGE CONFIG & FLOATING BUTTON CSS
 # ==============================================================================
 st.set_page_config(
     page_title="ESS AI Buddy",
@@ -19,53 +19,50 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS to pin the buttons horizontally side-by-side at the bottom-right
+# Fixed container positioned in bottom-right corner
 st.markdown(
     """
     <style>
-    /* Pin the horizontal row to bottom-right corner */
-    div[data-testid="stHorizontalBlock"]:has(button[key="float_mic_btn"]) {
-        position: fixed !important;
-        bottom: 30px !important;
-        right: 30px !important;
-        z-index: 999999 !important;
-        display: flex !important;
-        flex-direction: row !important;
-        align-items: center !important;
-        width: auto !important;
-        background: transparent !important;
-        gap: 10px !important;
+    .floating-button-bar {
+        position: fixed;
+        bottom: 25px;
+        right: 25px;
+        z-index: 999999;
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        gap: 12px;
     }
 
-    /* Force button columns to shrink to button width */
-    div[data-testid="stHorizontalBlock"]:has(button[key="float_mic_btn"]) > div[data-testid="column"] {
-        width: auto !important;
-        flex: none !important;
-        min-width: 0 !important;
+    .float-btn {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 50px;
+        padding: 10px 18px;
+        font-size: 16px;
+        font-weight: 600;
+        color: #1e293b;
+        cursor: pointer;
+        box-shadow: 0 4px 14px rgba(0,0,0,0.12);
+        transition: all 0.2s ease-in-out;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-decoration: none;
     }
 
-    /* Modern floating button styling */
-    div[data-testid="stHorizontalBlock"]:has(button[key="float_mic_btn"]) button {
-        background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%) !important;
-        border: 1px solid #cbd5e1 !important;
-        border-radius: 50px !important;
-        padding: 8px 16px !important;
-        font-size: 16px !important;
-        font-weight: 600 !important;
-        cursor: pointer !important;
-        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15) !important;
-        transition: all 0.2s ease-in-out !important;
-        color: #1e293b !important;
-        white-space: nowrap !important;
+    .float-btn:hover {
+        background-color: #ffffff;
+        border-color: #2563eb;
+        color: #2563eb;
+        box-shadow: 0 6px 20px rgba(37, 99, 235, 0.25);
+        transform: translateY(-2px);
     }
 
-    /* Hover effect */
-    div[data-testid="stHorizontalBlock"]:has(button[key="float_mic_btn"]) button:hover {
-        background: #ffffff !important;
-        border-color: #2563eb !important;
-        color: #2563eb !important;
-        box-shadow: 0 6px 20px rgba(37, 99, 235, 0.25) !important;
-        transform: translateY(-2px) !important;
+    .float-btn.active {
+        background-color: #eff6ff;
+        border-color: #2563eb;
+        color: #2563eb;
     }
 
     /* Header styling */
@@ -89,6 +86,15 @@ WIDGET_MODE = st.query_params.get("embed", "false").lower() == "true"
 DB_DIR = Path("chroma_db")
 COLLECTION_NAME = "ess_pdf_docs"
 DB_READY = False
+
+# Handle button toggles via query parameters
+if "show_mic" in st.query_params:
+    st.session_state.show_mic = st.query_params["show_mic"].lower() == "true"
+    st.query_params.clear()
+
+if "amharic_mode" in st.query_params:
+    st.session_state.amharic_mode = st.query_params["amharic_mode"].lower() == "true"
+    st.query_params.clear()
 
 if "amharic_mode" not in st.session_state:
     st.session_state.amharic_mode = False
@@ -377,21 +383,24 @@ with center_col:
             st.rerun()
 
 # ==============================================================================
-# 5. SIDE-BY-SIDE FLOATING BUTTONS IN BOTTOM-RIGHT CORNER
+# 5. FLOATING BUTTON BAR (DIRECT HTML INJECTION)
 # ==============================================================================
-float_col1, float_col2 = st.columns(2)
+mic_active = "active" if st.session_state.show_mic else ""
+amh_active = "active" if st.session_state.amharic_mode else ""
 
-with float_col1:
-    mic_label = "🎙️ Record" if st.session_state.show_mic else "🎙️"
-    if st.button(mic_label, key="float_mic_btn"):
-        st.session_state.show_mic = not st.session_state.show_mic
-        st.rerun()
+mic_toggle = "false" if st.session_state.show_mic else "true"
+amh_toggle = "false" if st.session_state.amharic_mode else "true"
 
-with float_col2:
-    amh_label = "🇪🇹 አማርኛ" if st.session_state.amharic_mode else "አ"
-    if st.button(amh_label, key="float_amh_btn"):
-        st.session_state.amharic_mode = not st.session_state.amharic_mode
-        st.toast(
-            f"Amharic mode {'enabled 🇪🇹' if st.session_state.amharic_mode else 'disabled 🌐'}"
-        )
-        st.rerun()
+st.markdown(
+    f"""
+    <div class="floating-button-bar">
+        <a href="?show_mic={mic_toggle}" target="_self" class="float-btn {mic_active}">
+            🎙️ {'Record' if st.session_state.show_mic else ''}
+        </a>
+        <a href="?amharic_mode={amh_toggle}" target="_self" class="float-btn {amh_active}">
+            {'🇪🇹 አማርኛ' if st.session_state.amharic_mode else 'አ'}
+        </a>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
