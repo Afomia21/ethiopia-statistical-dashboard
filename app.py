@@ -7,6 +7,7 @@ from pathlib import Path
 from chromadb import PersistentClient
 from chromadb.utils import embedding_functions
 from groq import Groq
+import streamlit.components.v1 as components
 
 # ==============================================================================
 # 1. PAGE CONFIG & CUSTOM CSS (FLOATING BUTTONS)
@@ -18,7 +19,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# CSS for styling the application and positioning floating buttons side-by-side
 st.markdown(
     """
     <style>
@@ -34,13 +34,11 @@ st.markdown(
         background: transparent;
     }
     
-    /* Ensure Streamlit button wrapper doesn't stretch full width */
     .floating-button-wrapper div[data-testid="stButton"] {
         width: auto !important;
         margin: 0 !important;
     }
 
-    /* Custom Floating Button Styling */
     .floating-button-wrapper button {
         background-color: #ffffff !important;
         border: 1px solid #d0d7de !important;
@@ -59,7 +57,6 @@ st.markdown(
         transform: translateY(-2px) !important;
     }
 
-    /* Header styling */
     .ess-bot-header {
         display: flex;
         align-items: center;
@@ -91,7 +88,6 @@ DB_DIR = Path("chroma_db")
 COLLECTION_NAME = "ess_pdf_docs"
 DB_READY = False
 
-# Initialize session state flags
 if "amharic_mode" not in st.session_state:
     st.session_state.amharic_mode = False
 if "show_mic" not in st.session_state:
@@ -104,7 +100,6 @@ if "chat_history" not in st.session_state:
 # ==============================================================================
 @st.cache_resource
 def get_pdf_collection():
-    """Initializes and returns the persistent ChromaDB collection."""
     global DB_READY
     try:
         if DB_DIR.exists():
@@ -125,7 +120,6 @@ def get_pdf_collection():
     return None
 
 def ask_groq(client: Groq, query: str, context_chunks: list, amharic: bool = False) -> str:
-    """Generates a grounded response using the Groq LLM API."""
     context_text = "\n\n".join(context_chunks)
     
     lang_instruction = (
@@ -172,7 +166,6 @@ def save_to_cache(query: str, answer: str, route: str, src_doc: str, src_page: s
     st.session_state.query_cache[query] = (answer, route, src_doc, src_page)
 
 def process_and_index_pdf(uploaded_file, collection):
-    """Processes dynamic PDF uploads directly from chat_input."""
     session_key = f"uploaded_{uploaded_file.name}"
     if session_key not in st.session_state:
         with st.spinner(f"Ingesting uploaded document '{uploaded_file.name}'..."):
@@ -198,7 +191,6 @@ def process_and_index_pdf(uploaded_file, collection):
                 st.session_state[session_key] = True
                 st.toast(f"✅ Indexed '{uploaded_file.name}' successfully!")
 
-# Initialize DB connection
 pdf_collection = get_pdf_collection()
 
 # ==============================================================================
@@ -258,7 +250,7 @@ with st.sidebar:
         st.caption("No previous questions found.")
 
 # ==============================================================================
-# 4. MAIN INTERFACE & CHAT CONSOLE
+# 4. MAIN INTERFACE & SINGLE RECORDER COMPONENT
 # ==============================================================================
 if not WIDGET_MODE:
     st.markdown(
@@ -277,26 +269,63 @@ if not WIDGET_MODE:
 left_pad, center_col, right_pad = st.columns([1, 2, 1])
 
 with center_col:
-    # Display active audio recorder section when microphone mode is toggled on
+    # Single unified HTML5 recording component directly in place (No 3 stacked boxes)
     if st.session_state.show_mic:
-        st.info("🎙 **Voice Input Mode:** Record your audio question below.")
-        audio_val = st.file_uploader("Upload audio file or capture voice query", type=["wav", "mp3", "m4a"], key="voice_uploader")
-        if audio_val is not None:
-            st.audio(audio_val)
-            st.success("Audio loaded successfully! Type or submit your question below.")
+        components.html(
+            """
+            <div style="background-color: #f0f2f6; padding: 15px; border-radius: 10px; font-family: sans-serif; text-align: center;">
+                <p style="margin: 0 0 10px 0; font-weight: bold; color: #1f2937;">🎙️ Direct Voice Recorder</p>
+                <button id="recBtn" style="background-color: #e11d48; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: bold;">
+                    🔴 Start Recording
+                </button>
+                <p id="statusMsg" style="margin-top: 8px; font-size: 13px; color: #4b5563;">Click button to speak...</p>
+            </div>
+            <script>
+                let btn = document.getElementById("recBtn");
+                let statusMsg = document.getElementById("statusMsg");
+                let recording = false;
+                let mediaRecorder;
+                let audioChunks = [];
 
-    # Display indicator when Amharic mode is toggled on
+                btn.onclick = async () => {
+                    if (!recording) {
+                        try {
+                            let stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                            mediaRecorder = new MediaRecorder(stream);
+                            audioChunks = [];
+                            mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+                            mediaRecorder.onstop = () => {
+                                statusMsg.innerText = "Recording finished! You can now send your query.";
+                            };
+                            mediaRecorder.start();
+                            recording = true;
+                            btn.innerText = "⏹️ Stop Recording";
+                            btn.style.backgroundColor = "#2563eb";
+                            statusMsg.innerText = "Listening...";
+                        } catch (err) {
+                            statusMsg.innerText = "Microphone access denied or not supported.";
+                        }
+                    } else {
+                        mediaRecorder.stop();
+                        recording = false;
+                        btn.innerText = "🔴 Record Again";
+                        btn.style.backgroundColor = "#e11d48";
+                    }
+                };
+            </script>
+            """,
+            height=120,
+        )
+
     if st.session_state.amharic_mode:
         st.caption("🇪🇹 **Amharic Mode Active** — Responses will be formatted in Amharic (አማርኛ).")
 
-    # Display chat history in the main UI
     for q, a in st.session_state.chat_history:
         with st.chat_message("user"):
             st.write(q)
         with st.chat_message("assistant"):
             st.write(a)
 
-    # Streamlit standard Chat Input
     chat_input_response = st.chat_input("Ask ESS AI Assistant...", accept_file=True)
 
     if chat_input_response:
