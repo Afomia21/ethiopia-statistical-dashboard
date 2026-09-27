@@ -18,32 +18,36 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for fixed bottom-right floating buttons
+# Custom CSS for fixed bottom-right floating buttons styled for Streamlit components
 st.markdown(
     """
     <style>
-    .floating-button-wrapper {
+    div[data-testid="stVerticalBlock"] > div.element-container:has(div.floating-container) {
         position: fixed;
         bottom: 30px;
         right: 30px;
         z-index: 999999;
+    }
+    .floating-container {
         display: flex;
         gap: 12px;
+        background: transparent;
     }
-    .custom-icon-btn {
-        background-color: #ffffff;
-        border: 1px solid #d0d7de;
-        border-radius: 8px;
-        padding: 10px 16px;
-        font-size: 18px;
-        cursor: pointer;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.15);
-        transition: all 0.2s ease-in-out;
+    .stButton > button.custom-float-btn {
+        background-color: #ffffff !important;
+        border: 1px solid #d0d7de !important;
+        border-radius: 8px !important;
+        padding: 10px 16px !important;
+        font-size: 18px !important;
+        cursor: pointer !important;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.15) !important;
+        transition: all 0.2s ease-in-out !important;
+        color: #000000 !important;
     }
-    .custom-icon-btn:hover {
-        background-color: #f3f4f6;
-        border-color: #000000;
-        transform: translateY(-2px);
+    .stButton > button.custom-float-btn:hover {
+        background-color: #f3f4f6 !important;
+        border-color: #000000 !important;
+        transform: translateY(-2px) !important;
     }
     </style>
     """,
@@ -56,6 +60,12 @@ WIDGET_MODE = st.query_params.get("embed", "false").lower() == "true"
 DB_DIR = Path("chroma_db")
 COLLECTION_NAME = "ess_pdf_docs"
 DB_READY = False
+
+# Initialize session state flags for floating features
+if "amharic_mode" not in st.session_state:
+    st.session_state.amharic_mode = False
+if "show_mic" not in st.session_state:
+    st.session_state.show_mic = False
 
 # ==============================================================================
 # 2. CHROMADB & HELPER FUNCTIONS
@@ -82,12 +92,18 @@ def get_pdf_collection():
     DB_READY = False
     return None
 
-def ask_groq(client: Groq, query: str, context_chunks: list) -> str:
+def ask_groq(client: Groq, query: str, context_chunks: list, amharic: bool = False) -> str:
     """Generates a grounded response using the Groq LLM API."""
     context_text = "\n\n".join(context_chunks)
+    
+    lang_instruction = (
+        "Respond in clear Amharic (አማርኛ)." if amharic 
+        else "Answer the user query strictly based on the provided context below."
+    )
+    
     system_prompt = (
         "You are an expert AI assistant for the Ethiopia Statistical Service (ESS).\n"
-        "Answer the user query strictly based on the provided context below.\n"
+        f"{lang_instruction}\n"
         "If the answer cannot be determined from the context, state that clearly."
     )
     user_prompt = f"Context:\n{context_text}\n\nQuery: {query}"
@@ -113,9 +129,11 @@ def save_chat(username: str, query: str, answer: str, source_type: str):
     if key not in st.session_state:
         st.session_state[key] = []
     st.session_state[key].append((query, answer, source_type, "", ""))
+
 def get_cached_answer(query: str):
     cache = st.session_state.get("query_cache", {})
     return cache.get(query)
+
 def save_to_cache(query: str, answer: str, route: str, src_doc: str, src_page: str):
     if "query_cache" not in st.session_state:
         st.session_state.query_cache = {}
@@ -206,6 +224,7 @@ with st.sidebar:
                 st.write(f"A: {a_text}")
     else:
         st.caption("No previous questions found.")
+
 # ==============================================================================
 # 4. MAIN INTERFACE & CHAT CONSOLE
 # ==============================================================================
@@ -229,6 +248,18 @@ if "chat_history" not in st.session_state:
 left_pad, center_col, right_pad = st.columns([1, 2, 1])
 
 with center_col:
+    # Voice Input Modal / Expander when mic is clicked
+    if st.session_state.show_mic:
+        st.info("🎙 Voice Mode Activated: Record your question below.")
+        audio_val = st.audio_input("Record audio query")
+        if audio_val:
+            st.success("Audio captured! Processing speech input...")
+            # Note: Integrate your speech-to-text API (e.g., Whisper) here if needed.
+
+    # Display active language mode status
+    if st.session_state.amharic_mode:
+        st.caption("🇪🇹 **Amharic Mode Active** — Answers will be forced to Amharic (አማርኛ).")
+
     chat_input_response = st.chat_input("Ask ESS AI Assistant...", accept_file=True)
 
     if chat_input_response:
@@ -247,7 +278,7 @@ with center_col:
         if user_query:
             cached_res = get_cached_answer(user_query) if DB_READY else None
 
-            if cached_res:
+            if cached_res and not st.session_state.amharic_mode:
                 answer, route, src_doc, src_page = cached_res
             else:
                 client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
@@ -258,7 +289,7 @@ with center_col:
                     docs = res.get("documents", [[]])[0]
 
                 if client and docs:
-                    answer = ask_groq(client, user_query, docs)
+                    answer = ask_groq(client, user_query, docs, amharic=st.session_state.amharic_mode)
                 elif not GROQ_API_KEY:
                     answer = "Error: GROQ_API_KEY is missing."
                 else:
@@ -273,14 +304,25 @@ with center_col:
             st.markdown(f"Answer: {answer}")
 
 # ==============================================================================
-# 5. FLOATING BUTTONS PINNED TO BOTTOM RIGHT
+# 5. FLOATING BUTTONS PINNED TO BOTTOM RIGHT (STREAMLIT NATIVE INTERACTION)
 # ==============================================================================
-st.markdown(
-    """
-    <div class="floating-button-wrapper">
-        <button class="custom-icon-btn" onclick="alert('Mic clicked')">🎙</button>
-        <button class="custom-icon-btn" onclick="alert('Amharic clicked')">አ</button>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+# Render styled floating container
+st.markdown('<div class="floating-container">', unsafe_allow_html=True)
+col_float1, col_float2 = st.columns(2)
+
+with col_float1:
+    mic_clicked = st.button("🎙", key="float_mic_btn", type="secondary")
+    if mic_clicked:
+        st.session_state.show_mic = not st.session_state.show_mic
+        st.rerun()
+
+with col_float2:
+    amh_clicked = st.button("አ", key="float_amh_btn", type="secondary")
+    if amh_clicked:
+        st.session_state.amharic_mode = not st.session_state.amharic_mode
+        st.toast(
+            f"Amharic mode {'enabled 🇪🇹' if st.session_state.amharic_mode else 'disabled 🌐'}"
+        )
+        st.rerun()
+
+st.markdown('</div>', unsafe_allow_html=True)
