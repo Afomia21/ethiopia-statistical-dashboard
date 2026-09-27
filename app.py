@@ -10,7 +10,7 @@ from groq import Groq
 import streamlit.components.v1 as components
 
 # ==============================================================================
-# 1. PAGE CONFIG & FLOATING BUTTON CSS
+# 1. PAGE CONFIG & STYLING
 # ==============================================================================
 st.set_page_config(
     page_title="ESS AI Buddy",
@@ -19,53 +19,11 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for placing st.popover or native buttons side-by-side without page reload
+# Custom CSS for UI polish and clean action button layout
 st.markdown(
     """
     <style>
-    /* Pin bottom-right floating container */
-    div[data-testid="stHorizontalBlock"]:has(button[key="float_mic_btn"]) {
-        position: fixed !important;
-        bottom: 25px !important;
-        right: 25px !important;
-        z-index: 999999 !important;
-        display: flex !important;
-        flex-direction: row !important;
-        align-items: center !important;
-        gap: 10px !important;
-        width: auto !important;
-        background: transparent !important;
-    }
-
-    /* Force columns to collapse to button width */
-    div[data-testid="stHorizontalBlock"]:has(button[key="float_mic_btn"]) > div[data-testid="column"] {
-        width: auto !important;
-        flex: none !important;
-        min-width: 0 !important;
-    }
-
-    /* Modern floating button styles */
-    div[data-testid="stHorizontalBlock"]:has(button[key="float_mic_btn"]) button {
-        background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%) !important;
-        border: 1px solid #e2e8f0 !important;
-        border-radius: 50px !important;
-        padding: 8px 16px !important;
-        font-size: 16px !important;
-        font-weight: 600 !important;
-        color: #1e293b !important;
-        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12) !important;
-        transition: all 0.2s ease-in-out !important;
-        white-space: nowrap !important;
-    }
-
-    div[data-testid="stHorizontalBlock"]:has(button[key="float_mic_btn"]) button:hover {
-        border-color: #2563eb !important;
-        color: #2563eb !important;
-        box-shadow: 0 6px 20px rgba(37, 99, 235, 0.25) !important;
-        transform: translateY(-2px) !important;
-    }
-
-    /* Header styling */
+    /* Styling for the header container */
     .ess-bot-header {
         display: flex;
         align-items: center;
@@ -75,6 +33,12 @@ st.markdown(
     .ess-bot-avatar { font-size: 36px; }
     .ess-bot-title { font-size: 24px; font-weight: bold; margin: 0; }
     .ess-bot-subtitle { font-size: 14px; color: #666; margin: 0; }
+
+    /* Custom compact styling for action buttons directly below chat bar */
+    div[data-testid="stHorizontalBlock"] button {
+        border-radius: 20px !important;
+        font-weight: 600 !important;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -327,8 +291,29 @@ with center_col:
         with st.chat_message("assistant"):
             st.write(a)
 
+    # 1. Main Chat Input Bar
     chat_input_response = st.chat_input("Ask ESS AI Assistant...", accept_file=True)
 
+    # 2. Side-by-Side Action Buttons directly below the input bar
+    # Using small proportional columns [1, 1, 8] keeps them tightly nested on the left side
+    btn_col1, btn_col2, _ = st.columns([1, 1, 8])
+
+    with btn_col1:
+        mic_label = "🎙️ Record" if st.session_state.show_mic else "🎙️"
+        if st.button(mic_label, key="action_mic_btn"):
+            st.session_state.show_mic = not st.session_state.show_mic
+            st.rerun()
+
+    with btn_col2:
+        amh_label = "🇪🇹 አማርኛ" if st.session_state.amharic_mode else "አ"
+        if st.button(amh_label, key="action_amh_btn"):
+            st.session_state.amharic_mode = not st.session_state.amharic_mode
+            st.toast(
+                f"Amharic mode {'enabled 🇪🇹' if st.session_state.amharic_mode else 'disabled 🌐'}"
+            )
+            st.rerun()
+
+    # Chat submission handling
     if chat_input_response:
         if isinstance(chat_input_response, str):
             user_query = chat_input_response
@@ -372,23 +357,3 @@ with center_col:
 
             st.session_state.chat_history.append((user_query, answer))
             st.rerun()
-
-# ==============================================================================
-# 5. INSTANT SIDE-BY-SIDE FLOATING BUTTONS
-# ==============================================================================
-float_col1, float_col2 = st.columns(2)
-
-with float_col1:
-    mic_label = "🎙️ Record" if st.session_state.show_mic else "🎙️"
-    if st.button(mic_label, key="float_mic_btn"):
-        st.session_state.show_mic = not st.session_state.show_mic
-        st.rerun()
-
-with float_col2:
-    amh_label = "🇪🇹 አማርኛ" if st.session_state.amharic_mode else "አ"
-    if st.button(amh_label, key="float_amh_btn"):
-        st.session_state.amharic_mode = not st.session_state.amharic_mode
-        st.toast(
-            f"Amharic mode {'enabled 🇪🇹' if st.session_state.amharic_mode else 'disabled 🌐'}"
-        )
-        st.rerun()
