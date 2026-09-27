@@ -19,35 +19,42 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS to force floating buttons side-by-side in bottom-right
+# Custom CSS to pin buttons directly side-by-side at the bottom-right
 st.markdown(
     """
     <style>
-    /* Pin wrapper to bottom-right corner */
-    div[data-testid="stHorizontalBlock"]:has(button[key="float_mic_btn"]) {
-        position: fixed !important;
-        bottom: 30px !important;
-        right: 30px !important;
-        z-index: 999999 !important;
-        width: auto !important;
-        background: transparent !important;
-        gap: 8px !important;
+    /* Fixed container for floating buttons directly next to each other */
+    .floating-container {
+        position: fixed;
+        bottom: 30px;
+        right: 30px;
+        z-index: 999999;
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        gap: 8px;
     }
 
-    /* Style individual floating buttons */
-    div[data-testid="stHorizontalBlock"]:has(button[key="float_mic_btn"]) button {
+    /* Style Streamlit buttons inside the floating container */
+    .floating-container div[data-testid="stButton"] {
+        width: auto !important;
+        margin: 0 !important;
+    }
+
+    .floating-container button {
         background-color: #ffffff !important;
         border: 1px solid #d0d7de !important;
         border-radius: 8px !important;
-        padding: 8px 16px !important;
+        padding: 8px 14px !important;
         font-size: 18px !important;
         cursor: pointer !important;
         box-shadow: 0 4px 10px rgba(0,0,0,0.15) !important;
         transition: all 0.2s ease-in-out !important;
         color: #000000 !important;
+        min-width: 45px !important;
     }
 
-    div[data-testid="stHorizontalBlock"]:has(button[key="float_mic_btn"]) button:hover {
+    .floating-container button:hover {
         background-color: #f3f4f6 !important;
         border-color: #000000 !important;
         transform: translateY(-2px) !important;
@@ -339,7 +346,6 @@ with center_col:
                 client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
                 docs = []
 
-                # Attempt ChromaDB document query if available
                 if pdf_collection:
                     try:
                         res = pdf_collection.query(query_texts=[user_query], n_results=5)
@@ -347,7 +353,6 @@ with center_col:
                     except Exception:
                         docs = []
 
-                # Ask Groq LLM using retrieved context or general LLM knowledge
                 if client:
                     answer = ask_groq(client, user_query, docs if docs else None, amharic=st.session_state.amharic_mode)
                 elif not GROQ_API_KEY:
@@ -364,21 +369,21 @@ with center_col:
             st.rerun()
 
 # ==============================================================================
-# 5. FLOATING BUTTONS PINNED SIDE-BY-SIDE
+# 5. FLOATING BUTTONS WRAPPED DIRECTLY NEXT TO EACH OTHER
 # ==============================================================================
-float_col1, float_col2 = st.columns([1, 1])
+st.markdown('<div class="floating-container">', unsafe_allow_html=True)
 
-with float_col1:
-    mic_clicked = st.button("🎙", key="float_mic_btn")
-    if mic_clicked:
-        st.session_state.show_mic = not st.session_state.show_mic
-        st.rerun()
+mic_clicked = st.button("🎙", key="float_mic_btn")
+if mic_clicked:
+    st.session_state.show_mic = not st.session_state.show_mic
+    st.rerun()
 
-with float_col2:
-    amh_clicked = st.button("አ", key="float_amh_btn")
-    if amh_clicked:
-        st.session_state.amharic_mode = not st.session_state.amharic_mode
-        st.toast(
-            f"Amharic mode {'enabled 🇪🇹' if st.session_state.amharic_mode else 'disabled 🌐'}"
-        )
-        st.rerun()
+amh_clicked = st.button("አ", key="float_amh_btn")
+if amh_clicked:
+    st.session_state.amharic_mode = not st.session_state.amharic_mode
+    st.toast(
+        f"Amharic mode {'enabled 🇪🇹' if st.session_state.amharic_mode else 'disabled 🌐'}"
+    )
+    st.rerun()
+
+st.markdown('</div>', unsafe_allow_html=True)
