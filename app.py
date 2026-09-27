@@ -197,7 +197,7 @@ with st.sidebar:
         (q, a, "pdf", "", "") for q, a in st.session_state.get("chat_history", [])
         if (q, a) not in [(item[0], item[1]) for item in db_history]
     ]
-[9/25/2026 7:20 AM] afomia: if all_history:
+    if all_history:
         for item in reversed(all_history):
             q_text = item[0]
             a_text = item[1]
