@@ -113,7 +113,7 @@ def save_chat(username: str, query: str, answer: str, source_type: str):
     if key not in st.session_state:
         st.session_state[key] = []
     st.session_state[key].append((query, answer, source_type, "", ""))
-[9/25/2026 7:20 AM] afomia: def get_cached_answer(query: str):
+def get_cached_answer(query: str):
     cache = st.session_state.get("query_cache", {})
     return cache.get(query)
 def save_to_cache(query: str, answer: str, route: str, src_doc: str, src_page: str):
