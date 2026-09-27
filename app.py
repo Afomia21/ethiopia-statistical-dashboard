@@ -19,44 +19,52 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS to pin buttons directly side-by-side at the bottom-right
+# Custom CSS to pin the buttons horizontally side-by-side at the bottom-right
 st.markdown(
     """
     <style>
-    /* Fixed container for floating buttons directly next to each other */
-    .floating-container {
-        position: fixed;
-        bottom: 30px;
-        right: 30px;
-        z-index: 999999;
-        display: flex;
-        flex-direction: row;
-        align-items: center;
-        gap: 8px;
-    }
-
-    /* Style Streamlit buttons inside the floating container */
-    .floating-container div[data-testid="stButton"] {
+    /* Pin the horizontal row to bottom-right corner */
+    div[data-testid="stHorizontalBlock"]:has(button[key="float_mic_btn"]) {
+        position: fixed !important;
+        bottom: 30px !important;
+        right: 30px !important;
+        z-index: 999999 !important;
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: center !important;
         width: auto !important;
-        margin: 0 !important;
+        background: transparent !important;
+        gap: 10px !important;
     }
 
-    .floating-container button {
-        background-color: #ffffff !important;
-        border: 1px solid #d0d7de !important;
-        border-radius: 8px !important;
-        padding: 8px 14px !important;
-        font-size: 18px !important;
+    /* Force button columns to shrink to button width */
+    div[data-testid="stHorizontalBlock"]:has(button[key="float_mic_btn"]) > div[data-testid="column"] {
+        width: auto !important;
+        flex: none !important;
+        min-width: 0 !important;
+    }
+
+    /* Modern floating button styling */
+    div[data-testid="stHorizontalBlock"]:has(button[key="float_mic_btn"]) button {
+        background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%) !important;
+        border: 1px solid #cbd5e1 !important;
+        border-radius: 50px !important;
+        padding: 8px 16px !important;
+        font-size: 16px !important;
+        font-weight: 600 !important;
         cursor: pointer !important;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.15) !important;
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15) !important;
         transition: all 0.2s ease-in-out !important;
-        color: #000000 !important;
-        min-width: 45px !important;
+        color: #1e293b !important;
+        white-space: nowrap !important;
     }
 
-    .floating-container button:hover {
-        background-color: #f3f4f6 !important;
-        border-color: #000000 !important;
+    /* Hover effect */
+    div[data-testid="stHorizontalBlock"]:has(button[key="float_mic_btn"]) button:hover {
+        background: #ffffff !important;
+        border-color: #2563eb !important;
+        color: #2563eb !important;
+        box-shadow: 0 6px 20px rgba(37, 99, 235, 0.25) !important;
         transform: translateY(-2px) !important;
     }
 
@@ -369,21 +377,21 @@ with center_col:
             st.rerun()
 
 # ==============================================================================
-# 5. FLOATING BUTTONS WRAPPED DIRECTLY NEXT TO EACH OTHER
+# 5. SIDE-BY-SIDE FLOATING BUTTONS IN BOTTOM-RIGHT CORNER
 # ==============================================================================
-st.markdown('<div class="floating-container">', unsafe_allow_html=True)
+float_col1, float_col2 = st.columns(2)
 
-mic_clicked = st.button("🎙", key="float_mic_btn")
-if mic_clicked:
-    st.session_state.show_mic = not st.session_state.show_mic
-    st.rerun()
+with float_col1:
+    mic_label = "🎙️ Record" if st.session_state.show_mic else "🎙️"
+    if st.button(mic_label, key="float_mic_btn"):
+        st.session_state.show_mic = not st.session_state.show_mic
+        st.rerun()
 
-amh_clicked = st.button("አ", key="float_amh_btn")
-if amh_clicked:
-    st.session_state.amharic_mode = not st.session_state.amharic_mode
-    st.toast(
-        f"Amharic mode {'enabled 🇪🇹' if st.session_state.amharic_mode else 'disabled 🌐'}"
-    )
-    st.rerun()
-
-st.markdown('</div>', unsafe_allow_html=True)
+with float_col2:
+    amh_label = "🇪🇹 አማርኛ" if st.session_state.amharic_mode else "አ"
+    if st.button(amh_label, key="float_amh_btn"):
+        st.session_state.amharic_mode = not st.session_state.amharic_mode
+        st.toast(
+            f"Amharic mode {'enabled 🇪🇹' if st.session_state.amharic_mode else 'disabled 🌐'}"
+        )
+        st.rerun()
