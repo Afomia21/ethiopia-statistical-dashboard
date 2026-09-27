@@ -10,7 +10,7 @@ from groq import Groq
 import streamlit.components.v1 as components
 
 # ==============================================================================
-# 1. PAGE CONFIG & CUSTOM CSS (FLOATING BUTTONS)
+# 1. PAGE CONFIG & SIDE-BY-SIDE FLOATING BUTTONS CSS
 # ==============================================================================
 st.set_page_config(
     page_title="ESS AI Buddy",
@@ -19,31 +19,27 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Custom CSS to force floating buttons side-by-side in bottom-right
 st.markdown(
     """
     <style>
-    /* Fixed container wrapper for floating side-by-side buttons */
-    .floating-button-wrapper {
-        position: fixed;
-        bottom: 30px;
-        right: 30px;
-        z-index: 999999;
-        display: flex;
-        flex-direction: row;
-        gap: 8px;
-        background: transparent;
-    }
-    
-    .floating-button-wrapper div[data-testid="stButton"] {
+    /* Pin wrapper to bottom-right corner */
+    div[data-testid="stHorizontalBlock"]:has(button[key="float_mic_btn"]) {
+        position: fixed !important;
+        bottom: 30px !important;
+        right: 30px !important;
+        z-index: 999999 !important;
         width: auto !important;
-        margin: 0 !important;
+        background: transparent !important;
+        gap: 8px !important;
     }
 
-    .floating-button-wrapper button {
+    /* Style individual floating buttons */
+    div[data-testid="stHorizontalBlock"]:has(button[key="float_mic_btn"]) button {
         background-color: #ffffff !important;
         border: 1px solid #d0d7de !important;
         border-radius: 8px !important;
-        padding: 8px 14px !important;
+        padding: 8px 16px !important;
         font-size: 18px !important;
         cursor: pointer !important;
         box-shadow: 0 4px 10px rgba(0,0,0,0.15) !important;
@@ -51,31 +47,22 @@ st.markdown(
         color: #000000 !important;
     }
 
-    .floating-button-wrapper button:hover {
+    div[data-testid="stHorizontalBlock"]:has(button[key="float_mic_btn"]) button:hover {
         background-color: #f3f4f6 !important;
         border-color: #000000 !important;
         transform: translateY(-2px) !important;
     }
 
+    /* Header styling */
     .ess-bot-header {
         display: flex;
         align-items: center;
         gap: 12px;
         margin-bottom: 20px;
     }
-    .ess-bot-avatar {
-        font-size: 36px;
-    }
-    .ess-bot-title {
-        font-size: 24px;
-        font-weight: bold;
-        margin: 0;
-    }
-    .ess-bot-subtitle {
-        font-size: 14px;
-        color: #666;
-        margin: 0;
-    }
+    .ess-bot-avatar { font-size: 36px; }
+    .ess-bot-title { font-size: 24px; font-weight: bold; margin: 0; }
+    .ess-bot-subtitle { font-size: 14px; color: #666; margin: 0; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -114,25 +101,28 @@ def get_pdf_collection():
             )
             DB_READY = True
             return collection
-    except Exception as e:
-        st.warning(f"ChromaDB connection note: {e}")
+    except Exception:
+        pass
     DB_READY = False
     return None
 
-def ask_groq(client: Groq, query: str, context_chunks: list, amharic: bool = False) -> str:
-    context_text = "\n\n".join(context_chunks)
-    
-    lang_instruction = (
-        "Respond in clear Amharic (አማርኛ)." if amharic 
-        else "Answer the user query strictly based on the provided context below."
-    )
+def ask_groq(client: Groq, query: str, context_chunks: list = None, amharic: bool = False) -> str:
+    """Generates a response using Groq LLM API with or without PDF context."""
+    if context_chunks:
+        context_text = "\n\n".join(context_chunks)
+        user_prompt = f"Context from documents:\n{context_text}\n\nUser Question: {query}"
+        instructions = "Answer the user question based on the context above if applicable."
+    else:
+        user_prompt = query
+        instructions = "Answer the user question as an expert assistant on Ethiopian statistics and general information."
+
+    lang_instruction = "Respond in clear Amharic (አማርኛ)." if amharic else "Respond in clear English."
     
     system_prompt = (
         "You are an expert AI assistant for the Ethiopia Statistical Service (ESS).\n"
-        f"{lang_instruction}\n"
-        "If the answer cannot be determined from the context, state that clearly."
+        f"{instructions}\n"
+        f"{lang_instruction}"
     )
-    user_prompt = f"Context:\n{context_text}\n\nQuery: {query}"
 
     try:
         response = client.chat.completions.create(
@@ -250,7 +240,7 @@ with st.sidebar:
         st.caption("No previous questions found.")
 
 # ==============================================================================
-# 4. MAIN INTERFACE & SINGLE RECORDER COMPONENT
+# 4. MAIN INTERFACE & CHAT LOGIC
 # ==============================================================================
 if not WIDGET_MODE:
     st.markdown(
@@ -269,7 +259,6 @@ if not WIDGET_MODE:
 left_pad, center_col, right_pad = st.columns([1, 2, 1])
 
 with center_col:
-    # Single unified HTML5 recording component directly in place (No 3 stacked boxes)
     if st.session_state.show_mic:
         components.html(
             """
@@ -295,7 +284,7 @@ with center_col:
                             audioChunks = [];
                             mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
                             mediaRecorder.onstop = () => {
-                                statusMsg.innerText = "Recording finished! You can now send your query.";
+                                statusMsg.innerText = "Recording finished! Type or submit your question.";
                             };
                             mediaRecorder.start();
                             recording = true;
@@ -350,16 +339,21 @@ with center_col:
                 client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
                 docs = []
 
+                # Attempt ChromaDB document query if available
                 if pdf_collection:
-                    res = pdf_collection.query(query_texts=[user_query], n_results=5)
-                    docs = res.get("documents", [[]])[0]
+                    try:
+                        res = pdf_collection.query(query_texts=[user_query], n_results=5)
+                        docs = res.get("documents", [[]])[0]
+                    except Exception:
+                        docs = []
 
-                if client and docs:
-                    answer = ask_groq(client, user_query, docs, amharic=st.session_state.amharic_mode)
+                # Ask Groq LLM using retrieved context or general LLM knowledge
+                if client:
+                    answer = ask_groq(client, user_query, docs if docs else None, amharic=st.session_state.amharic_mode)
                 elif not GROQ_API_KEY:
                     answer = "Error: GROQ_API_KEY is missing."
                 else:
-                    answer = "I couldn't locate specific information on that in the documents or tables."
+                    answer = "Unable to process the request at this time."
 
                 if DB_READY:
                     current_user = st.session_state.get("username", "guest")
@@ -370,25 +364,21 @@ with center_col:
             st.rerun()
 
 # ==============================================================================
-# 5. FLOATING SIDE-BY-SIDE BUTTONS (BOTTOM-RIGHT PINNED)
+# 5. FLOATING BUTTONS PINNED SIDE-BY-SIDE
 # ==============================================================================
-st.markdown('<div class="floating-button-wrapper">', unsafe_allow_html=True)
+float_col1, float_col2 = st.columns([1, 1])
 
-col1, col2 = st.columns([1, 1])
-
-with col1:
-    mic_clicked = st.button("🎙", key="float_mic_btn", type="secondary")
+with float_col1:
+    mic_clicked = st.button("🎙", key="float_mic_btn")
     if mic_clicked:
         st.session_state.show_mic = not st.session_state.show_mic
         st.rerun()
 
-with col2:
-    amh_clicked = st.button("አ", key="float_amh_btn", type="secondary")
+with float_col2:
+    amh_clicked = st.button("አ", key="float_amh_btn")
     if amh_clicked:
         st.session_state.amharic_mode = not st.session_state.amharic_mode
         st.toast(
             f"Amharic mode {'enabled 🇪🇹' if st.session_state.amharic_mode else 'disabled 🌐'}"
         )
         st.rerun()
-
-st.markdown('</div>', unsafe_allow_html=True)
