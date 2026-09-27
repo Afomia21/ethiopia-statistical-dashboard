@@ -9,7 +9,7 @@ from chromadb.utils import embedding_functions
 from groq import Groq
 
 # ==============================================================================
-# 1. PAGE CONFIG & FIXED FLOATING BUTTONS CSS
+# 1. PAGE CONFIG & CUSTOM CSS (FLOATING BUTTONS)
 # ==============================================================================
 st.set_page_config(
     page_title="ESS AI Buddy",
@@ -18,54 +18,86 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for fixed bottom-right floating buttons styled for Streamlit components
+# CSS for styling the application and positioning floating buttons side-by-side
 st.markdown(
     """
     <style>
-    div[data-testid="stVerticalBlock"] > div.element-container:has(div.floating-container) {
+    /* Fixed container wrapper for floating side-by-side buttons */
+    .floating-button-wrapper {
         position: fixed;
         bottom: 30px;
         right: 30px;
         z-index: 999999;
-    }
-    .floating-container {
         display: flex;
-        gap: 12px;
+        flex-direction: row;
+        gap: 8px;
         background: transparent;
     }
-    .stButton > button.custom-float-btn {
+    
+    /* Ensure Streamlit button wrapper doesn't stretch full width */
+    .floating-button-wrapper div[data-testid="stButton"] {
+        width: auto !important;
+        margin: 0 !important;
+    }
+
+    /* Custom Floating Button Styling */
+    .floating-button-wrapper button {
         background-color: #ffffff !important;
         border: 1px solid #d0d7de !important;
         border-radius: 8px !important;
-        padding: 10px 16px !important;
+        padding: 8px 14px !important;
         font-size: 18px !important;
         cursor: pointer !important;
         box-shadow: 0 4px 10px rgba(0,0,0,0.15) !important;
         transition: all 0.2s ease-in-out !important;
         color: #000000 !important;
     }
-    .stButton > button.custom-float-btn:hover {
+
+    .floating-button-wrapper button:hover {
         background-color: #f3f4f6 !important;
         border-color: #000000 !important;
         transform: translateY(-2px) !important;
+    }
+
+    /* Header styling */
+    .ess-bot-header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 20px;
+    }
+    .ess-bot-avatar {
+        font-size: 36px;
+    }
+    .ess-bot-title {
+        font-size: 24px;
+        font-weight: bold;
+        margin: 0;
+    }
+    .ess-bot-subtitle {
+        font-size: 14px;
+        color: #666;
+        margin: 0;
     }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-# Environment setup
+# Environment & Globals Setup
 GROQ_API_KEY = st.secrets.get("GROQ_API_KEY") or os.getenv("GROQ_API_KEY")
 WIDGET_MODE = st.query_params.get("embed", "false").lower() == "true"
 DB_DIR = Path("chroma_db")
 COLLECTION_NAME = "ess_pdf_docs"
 DB_READY = False
 
-# Initialize session state flags for floating features
+# Initialize session state flags
 if "amharic_mode" not in st.session_state:
     st.session_state.amharic_mode = False
 if "show_mic" not in st.session_state:
     st.session_state.show_mic = False
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
 
 # ==============================================================================
 # 2. CHROMADB & HELPER FUNCTIONS
@@ -114,7 +146,7 @@ def ask_groq(client: Groq, query: str, context_chunks: list, amharic: bool = Fal
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            model="openai/gpt-oss-20b",  # <--- ACTIVE WORKING MODEL
+            model="openai/gpt-oss-20b",
             temperature=0.2
         )
         return response.choices[0].message.content
@@ -166,11 +198,11 @@ def process_and_index_pdf(uploaded_file, collection):
                 st.session_state[session_key] = True
                 st.toast(f"✅ Indexed '{uploaded_file.name}' successfully!")
 
-# Initialize ChromaDB connection
+# Initialize DB connection
 pdf_collection = get_pdf_collection()
 
 # ==============================================================================
-# 3. SIDEBAR: USER AUTHENTICATION & CHAT HISTORY
+# 3. SIDEBAR: AUTHENTICATION & HISTORY
 # ==============================================================================
 with st.sidebar:
     st.subheader("👤 User Authentication")
@@ -195,7 +227,7 @@ with st.sidebar:
                 else:
                     st.error("Please enter both username and password.")
     else:
-        st.write(f"Logged in as: {st.session_state.username}")
+        st.write(f"Logged in as: **{st.session_state.username}**")
         if st.button("Logout"):
             st.session_state.authenticated = False
             st.session_state.username = "guest"
@@ -220,8 +252,8 @@ with st.sidebar:
             q_text = item[0]
             a_text = item[1]
             with st.expander(f"❓ {q_text[:30]}..."):
-                st.write(f"Q: {q_text}")
-                st.write(f"A: {a_text}")
+                st.write(f"**Q:** {q_text}")
+                st.write(f"**A:** {a_text}")
     else:
         st.caption("No previous questions found.")
 
@@ -242,24 +274,29 @@ if not WIDGET_MODE:
         unsafe_allow_html=True,
     )
 
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
-
 left_pad, center_col, right_pad = st.columns([1, 2, 1])
 
 with center_col:
-    # Voice Input Modal / Expander when mic is clicked
+    # Display active audio recorder section when microphone mode is toggled on
     if st.session_state.show_mic:
-        st.info("🎙 Voice Mode Activated: Record your question below.")
-        audio_val = st.audio_input("Record audio query")
-        if audio_val:
-            st.success("Audio captured! Processing speech input...")
-            # Note: Integrate your speech-to-text API (e.g., Whisper) here if needed.
+        st.info("🎙 **Voice Input Mode:** Record your audio question below.")
+        audio_val = st.file_uploader("Upload audio file or capture voice query", type=["wav", "mp3", "m4a"], key="voice_uploader")
+        if audio_val is not None:
+            st.audio(audio_val)
+            st.success("Audio loaded successfully! Type or submit your question below.")
 
-    # Display active language mode status
+    # Display indicator when Amharic mode is toggled on
     if st.session_state.amharic_mode:
-        st.caption("🇪🇹 **Amharic Mode Active** — Answers will be forced to Amharic (አማርኛ).")
+        st.caption("🇪🇹 **Amharic Mode Active** — Responses will be formatted in Amharic (አማርኛ).")
 
+    # Display chat history in the main UI
+    for q, a in st.session_state.chat_history:
+        with st.chat_message("user"):
+            st.write(q)
+        with st.chat_message("assistant"):
+            st.write(a)
+
+    # Streamlit standard Chat Input
     chat_input_response = st.chat_input("Ask ESS AI Assistant...", accept_file=True)
 
     if chat_input_response:
@@ -301,22 +338,22 @@ with center_col:
                     save_to_cache(user_query, answer, "pdf", "", "")
 
             st.session_state.chat_history.append((user_query, answer))
-            st.markdown(f"Answer: {answer}")
+            st.rerun()
 
 # ==============================================================================
-# 5. FLOATING BUTTONS PINNED TO BOTTOM RIGHT (STREAMLIT NATIVE INTERACTION)
+# 5. FLOATING SIDE-BY-SIDE BUTTONS (BOTTOM-RIGHT PINNED)
 # ==============================================================================
-# Render styled floating container
-st.markdown('<div class="floating-container">', unsafe_allow_html=True)
-col_float1, col_float2 = st.columns(2)
+st.markdown('<div class="floating-button-wrapper">', unsafe_allow_html=True)
 
-with col_float1:
+col1, col2 = st.columns([1, 1])
+
+with col1:
     mic_clicked = st.button("🎙", key="float_mic_btn", type="secondary")
     if mic_clicked:
         st.session_state.show_mic = not st.session_state.show_mic
         st.rerun()
 
-with col_float2:
+with col2:
     amh_clicked = st.button("አ", key="float_amh_btn", type="secondary")
     if amh_clicked:
         st.session_state.amharic_mode = not st.session_state.amharic_mode
